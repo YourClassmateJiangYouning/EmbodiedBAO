@@ -55,6 +55,10 @@ BAO task?
   `BAO_DISABLE_PROXY=1`.
 - H1 robot asset: auto-detected from Isaac Sim or Isaac Lab built-in
   assets. Override with the `EMBODIEDBAO_H1_USD` environment variable.
+- If the H1 asset is not found, locate it on the machine with
+  `find ~ -iname "h1*.usd*" 2>/dev/null`, then run
+  `export EMBODIEDBAO_H1_USD=/full/path/to/h1.usd` before starting the
+  experiment.
 
 ## Usage
 

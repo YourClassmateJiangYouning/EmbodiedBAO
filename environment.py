@@ -321,6 +321,9 @@ class BAOEnv:
         candidates.append(os.path.join(os.getcwd(), "assets", "H1", "h1_with_hands.usd"))
         candidates.append("omniverse://localhost/Isaac/Robots/Unitree/H1/h1.usd")
         candidates.append("omniverse://localhost/Isaac/Robots/Unitree/H1/h1.usda")
+        for path in self._discover_h1_assets():
+            if path not in candidates:
+                candidates.append(path)
 
         seen = set()
         for path in candidates:
@@ -334,8 +337,61 @@ class BAOEnv:
                 return path
         raise FileNotFoundError(
             "Could not locate a Unitree H1 USD asset. Set EMBODIEDBAO_H1_USD to the "
-            "USD path, or install Isaac Sim/Isaac Lab assets."
+            "USD path, place h1.usd under assets/H1/, or install Isaac Sim/Isaac Lab "
+            "assets."
         )
+
+    def _discover_h1_assets(self, max_depth: int = 10) -> List[str]:
+        """Search common Isaac Lab / local asset locations for H1 USD files."""
+        roots: List[str] = []
+        for env_name in ("EMBODIEDBAO_H1_USD_DIR", "ISAACLAB_ASSETS_DIR"):
+            root = os.environ.get(env_name, "")
+            if root and os.path.isdir(root):
+                roots.append(root)
+        try:
+            import isaaclab_assets
+
+            module_dir = os.path.dirname(os.path.abspath(isaaclab_assets.__file__))
+            if module_dir not in roots and os.path.isdir(module_dir):
+                roots.append(module_dir)
+        except Exception:
+            pass
+        home = os.path.expanduser("~")
+        roots.extend(
+            [
+                os.path.join(home, "isaaclab"),
+                os.path.join(home, ".local", "share", "ov", "pkg"),
+            ]
+        )
+        isaacsim_root = os.environ.get("ISAACSIM_ROOT", "")
+        if isaacsim_root:
+            roots.append(os.path.join(isaacsim_root, "assets"))
+        roots.append(os.path.join(os.getcwd(), "assets"))
+        roots = [root for root in roots if root and os.path.isdir(root)]
+
+        found: List[str] = []
+        for root in roots:
+            for dirpath, dirnames, filenames in os.walk(root):
+                depth = dirpath[len(root):].count(os.sep)
+                if depth >= max_depth:
+                    dirnames[:] = []
+                    continue
+                for name in filenames:
+                    lower = name.lower()
+                    if not lower.startswith("h1") or not lower.endswith(
+                        (".usd", ".usda")
+                    ):
+                        continue
+                    path = os.path.join(dirpath, name)
+                    if path not in found:
+                        found.append(path)
+        found.sort(
+            key=lambda path: (
+                0 if "unitree" in path.lower() else 1,
+                path.lower(),
+            )
+        )
+        return found
 
     def _find_hand_prim(self) -> None:
         scored: List[Tuple[int, str]] = []
