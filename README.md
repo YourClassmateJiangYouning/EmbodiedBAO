@@ -45,9 +45,14 @@ BAO task?
 - Install dependencies:
   - Windows: `%ISAACSIM_ROOT%\python.bat -m pip install -r requirements.txt`
   - Linux: `$ISAACSIM_ROOT/python.sh -m pip install -r requirements.txt`
-- API configuration (OpenAI-compatible aggregator such as Taotoken):
+- API configuration (OpenAI-compatible endpoint), in priority order:
+  - `BOYUE_API_KEY` / `BOYUE_BASE_URL` (lab server; when only
+    `BOYUE_API_KEY` is set, `http://35.220.164.252:3888/v1/` is used by
+    default)
   - `TAOTOKEN_API_KEY` / `TAOTOKEN_BASE_URL`
-  - or `OPENAI_API_KEY` / `OPENAI_BASE_URL`
+  - `OPENAI_API_KEY` / `OPENAI_BASE_URL`
+- If the lab machine uses proxies that block the API server, set
+  `BAO_DISABLE_PROXY=1`.
 - H1 robot asset: auto-detected from Isaac Sim or Isaac Lab built-in
   assets. Override with the `EMBODIEDBAO_H1_USD` environment variable.
 

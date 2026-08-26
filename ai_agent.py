@@ -1,12 +1,15 @@
 """Unified multimodal LLM interface for EmbodiedBAO.
 
 All models are called through a single OpenAI-compatible endpoint (for example
-an API aggregator such as Taotoken), so switching models is just a matter of
-passing a different ``model_name``.  The endpoint and key are read from
-environment variables:
+an API aggregator such as Taotoken or a lab inference server), so switching
+models is just a matter of passing a different ``model_name``.  The endpoint
+and key are read from environment variables, in priority order:
 
-    API key   : TAOTOKEN_API_KEY or OPENAI_API_KEY
-    base URL  : TAOTOKEN_BASE_URL or OPENAI_BASE_URL
+    API key   : BOYUE_API_KEY > TAOTOKEN_API_KEY > OPENAI_API_KEY
+    base URL  : BOYUE_BASE_URL > TAOTOKEN_BASE_URL > OPENAI_BASE_URL
+
+When only ``BOYUE_API_KEY`` is set, the lab server default
+``http://35.220.164.252:3888/v1/`` is used automatically.
 
 Reference: MirrorBench ``agent.py`` (base64 image encoding, OpenAI client,
 temperature 0, retry loop).  In addition to the API agent, a ``random`` model
@@ -61,6 +64,22 @@ MODEL_ALIASES: Dict[str, str] = {
     "llava1.67b": "llava-1.6-7b",
     "llava-1.6-7b": "llava-1.6-7b",
 }
+
+BOYUE_DEFAULT_BASE_URL = "http://35.220.164.252:3888/v1/"
+OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
+
+
+def disable_proxy() -> None:
+    """Remove proxy environment variables (mirrors utils.disable_proxy)."""
+    for name in (
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+    ):
+        os.environ.pop(name, None)
 
 
 OUTPUT_JSON_SUFFIX = (
@@ -208,22 +227,38 @@ class AgentAPI:
         self.model_name = normalize_model_name(model_name)
         if self.model_name not in SUPPORTED_MODELS:
             print(f"[ai_agent] Warning: model '{self.model_name}' is not in the known list.")
-        self.api_key = api_key or os.environ.get("TAOTOKEN_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        self.api_key = (
+            api_key
+            or os.environ.get("BOYUE_API_KEY")
+            or os.environ.get("TAOTOKEN_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+        )
         if not self.api_key:
             raise ValueError(
-                "No API key found. Set TAOTOKEN_API_KEY or OPENAI_API_KEY in the environment."
+                "No API key found. Set BOYUE_API_KEY, TAOTOKEN_API_KEY, or "
+                "OPENAI_API_KEY in the environment."
             )
-        self.base_url = (
-            base_url
+        env_base_url = (
+            os.environ.get("BOYUE_BASE_URL")
             or os.environ.get("TAOTOKEN_BASE_URL")
             or os.environ.get("OPENAI_BASE_URL")
-            or "https://api.openai.com/v1"
         )
+        if base_url:
+            self.base_url = base_url
+        elif env_base_url:
+            self.base_url = env_base_url
+        elif os.environ.get("BOYUE_API_KEY"):
+            self.base_url = BOYUE_DEFAULT_BASE_URL
+        else:
+            self.base_url = OPENAI_DEFAULT_BASE_URL
         self.timeout = timeout or float(os.environ.get("BAO_LLM_TIMEOUT", "60"))
         self.temperature = temperature
         self.max_retries = int(max_retries)
         self.use_json_mode = bool(use_json_mode)
         self.log_file = log_file
+
+        if os.environ.get("BAO_DISABLE_PROXY", "0") == "1":
+            disable_proxy()
 
         from openai import OpenAI
 
@@ -348,7 +383,7 @@ class AIAgent(AgentAPI):
         super().__init__(model_name=model, **kwargs)
 
 
-_AGENT_CACHE: Dict[Tuple[str, str, str], AgentAPI] = {}
+_AGENT_CACHE: Dict[Tuple[str, str, str, str], AgentAPI] = {}
 
 
 def create_agent(model_name: str, log_file: Optional[str] = None) -> Any:
@@ -356,7 +391,12 @@ def create_agent(model_name: str, log_file: Optional[str] = None) -> Any:
     normalized = normalize_model_name(model_name)
     if normalized == "random":
         return RandomAgent()
-    key = (normalized, os.environ.get("TAOTOKEN_BASE_URL", ""), os.environ.get("OPENAI_BASE_URL", ""))
+    key = (
+        normalized,
+        os.environ.get("BOYUE_BASE_URL", ""),
+        os.environ.get("TAOTOKEN_BASE_URL", ""),
+        os.environ.get("OPENAI_BASE_URL", ""),
+    )
     agent = _AGENT_CACHE.get(key)
     if agent is None:
         agent = AgentAPI(model_name=model_name, log_file=log_file)
