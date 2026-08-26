@@ -17,6 +17,7 @@ import csv
 import json
 import os
 import time
+import traceback
 from typing import Any, Dict, List
 
 
@@ -124,17 +125,31 @@ def _progress_callback(
             f"[main] level {level}: episode {completed}/{total}, "
             f"current success rate = {rate:.3f}"
         )
+        _write_progress(
+            f"level {level}: episode {completed}/{total} success_rate={rate:.3f}"
+        )
+
+
+def _write_progress(message: str) -> None:
+    """Append a timestamped line to run_progress.txt (stdout is swallowed)."""
+    path = os.path.join(os.getcwd(), "run_progress.txt")
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
 
 
 def main() -> None:
     args = parse_args()
     levels = [0, 1, 2, 3] if args.all_levels else [args.level]
-
-    from isaacsim import SimulationApp
-
-    simulation_app = SimulationApp({"headless": args.headless})
+    _write_progress(
+        f"main start: model={args.model} levels={levels} episodes={args.episodes}"
+    )
     env = None
     try:
+        from isaacsim import SimulationApp
+
+        simulation_app = SimulationApp({"headless": args.headless})
+        _write_progress("SimulationApp started")
+
         import ai_agent
         import environment
         from experiments import BAOExperimentRunner
@@ -142,9 +157,12 @@ def main() -> None:
         task_dict = json.loads(args.env_config)
         task_dict["headless"] = args.headless
         env = environment.setup_scene(simulation_app, task_dict=task_dict)
+        _write_progress("environment created")
+
         # Fail fast if the API key/model configuration is invalid; also
         # supports the "random" baseline via the create_agent factory.
         agent = ai_agent.create_agent(model=args.model)
+        _write_progress(f"agent created: {args.model}")
 
         runner = BAOExperimentRunner(
             env=env,
@@ -154,8 +172,10 @@ def main() -> None:
             tag=args.tag,
         )
         runner.save_args(args)
+        _write_progress("runner created")
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         for level in levels:
+            _write_progress(f"level {level} start")
             episodes = runner.run_level(
                 level=level,
                 episodes=args.episodes,
@@ -167,6 +187,12 @@ def main() -> None:
                 episodes, model=args.model, level=level, timestamp=timestamp
             )
             print(f"[main] saved {csv_path}")
+            _write_progress(f"csv saved: {csv_path}")
+        _write_progress("all levels done")
+    except Exception as exc:
+        _write_progress(f"ERROR: {type(exc).__name__}: {exc}")
+        _write_progress(traceback.format_exc())
+        raise
     finally:
         if env is not None:
             env.close()
