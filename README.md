@@ -159,6 +159,11 @@ Outputs:
 - `execute_action` returns `StepResult(rgb, legal, feedback, distance,
   success, collision, state)`. `legal=False` means the action was blocked
   by the transparent wall.
+- Optional speed knobs via `--env_config` JSON (defaults match the spec:
+  1024x1024 camera, 30 render steps per action, 30 reset steps):
+  `camera_resolution`, `action_steps`, `reset_steps`, `rendermode`, `spp`.
+  Example: `{"rendermode":"RaytracedLighting","spp":4,"camera_resolution":[512,512],
+  "action_steps":5,"reset_steps":5}`.
 
 ## experiments.py
 

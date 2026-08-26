@@ -270,11 +270,14 @@ class BAOEnv:
         )
 
     def _create_camera(self) -> None:
+        resolution = tuple(
+            int(v) for v in self.task_dict.get("camera_resolution", (1024, 1024))
+        )
         self.camera = Camera(
             prim_path="/World/Camera",
             translation=np.array([ROBOT_START_POS[0], ROBOT_HEAD_HEIGHT, ROBOT_START_POS[2]]),
             frequency=20,
-            resolution=(1024, 1024),
+            resolution=resolution,
         )
 
     def _load_robot(self) -> None:
@@ -589,7 +592,7 @@ class BAOEnv:
             except Exception:
                 pass
         self._update_camera()
-        for _ in range(30):
+        for _ in range(int(self.task_dict.get("reset_steps", 30))):
             self.world.step(render=True)
         return self.camera.get_rgb(), self.get_distance_to_target()
 
