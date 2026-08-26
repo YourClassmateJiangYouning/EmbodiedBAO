@@ -197,7 +197,10 @@ class BAOEnv:
         self.task_dict = task_dict or {}
 
         settings = carb.settings.get_settings()
-        settings.set("/rtx/rendermode", "PathTracing")
+        settings.set(
+            "/rtx/rendermode",
+            str(self.task_dict.get("rendermode", "PathTracing")),
+        )
         settings.set("/rtx/pathtracing/spp", int(self.task_dict.get("spp", 16)))
 
         self.world = World(stage_units_in_meters=1.0)

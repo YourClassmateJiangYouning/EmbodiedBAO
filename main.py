@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import time
 from typing import Any, Dict, List
@@ -33,6 +34,12 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--collision_timeout", type=int, default=3)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--tag", type=str, default="", help="Optional run tag")
+    parser.add_argument(
+        "--env_config",
+        type=str,
+        default="{}",
+        help='JSON dict passed to BAOEnv, e.g. \'{"rendermode":"RaytracedLighting","spp":4}\'',
+    )
     return parser.parse_args(argv)
 
 
@@ -132,9 +139,9 @@ def main() -> None:
         import environment
         from experiments import BAOExperimentRunner
 
-        env = environment.setup_scene(
-            simulation_app, task_dict={"headless": args.headless}
-        )
+        task_dict = json.loads(args.env_config)
+        task_dict["headless"] = args.headless
+        env = environment.setup_scene(simulation_app, task_dict=task_dict)
         # Fail fast if the API key/model configuration is invalid; also
         # supports the "random" baseline via the create_agent factory.
         agent = ai_agent.create_agent(model=args.model)
