@@ -59,6 +59,12 @@ BAO task?
   `find ~ -iname "h1*.usd*" 2>/dev/null`, then run
   `export EMBODIEDBAO_H1_USD=/full/path/to/h1.usd` before starting the
   experiment.
+- If no H1 USD is available, download the official Unitree H1 URDF (for
+  example from `github.com/unitreerobotics/unitree_ros`, file
+  `robots/h1_description/urdf/h1_with_hand.urdf`) and convert it:
+  `$ISAACSIM_ROOT/python.sh convert_h1_urdf.py /path/to/h1_with_hand.urdf
+  /path/to/output/h1.usd`. Then point `EMBODIEDBAO_H1_USD` at the output
+  file or place it at `assets/H1/h1.usd`.
 
 ## Usage
 
