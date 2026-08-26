@@ -386,8 +386,16 @@ class AIAgent(AgentAPI):
 _AGENT_CACHE: Dict[Tuple[str, str, str, str], AgentAPI] = {}
 
 
-def create_agent(model_name: str, log_file: Optional[str] = None) -> Any:
+def create_agent(
+    model_name: Optional[str] = None,
+    model: Optional[str] = None,
+    log_file: Optional[str] = None,
+) -> Any:
     """Factory used by experiments.py; also callable as get_agent."""
+    if model_name is None:
+        model_name = model
+    if model_name is None:
+        raise ValueError("create_agent requires model_name or model")
     normalized = normalize_model_name(model_name)
     if normalized == "random":
         return RandomAgent()
