@@ -25,6 +25,7 @@ import os
 import random
 import re
 import time
+import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -210,6 +211,69 @@ def build_prompt(level: int, context: Optional[Dict[str, Any]] = None) -> str:
     return "\n".join(lines)
 
 
+class _OpenAICompatMessage:
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
+class _OpenAICompatChoice:
+    def __init__(self, content: str) -> None:
+        self.message = _OpenAICompatMessage(content)
+
+
+class _OpenAICompatResponse:
+    def __init__(self, content: str) -> None:
+        self.choices = [_OpenAICompatChoice(content)]
+
+
+class _OpenAICompatCompletions:
+    """Minimal chat.completions implementation using only the standard library."""
+
+    def __init__(self, client: "_OpenAICompatClient") -> None:
+        self._client = client
+
+    def create(
+        self,
+        model: str,
+        messages: List[Dict[str, Any]],
+        temperature: float = 0.0,
+        response_format: Optional[Dict[str, Any]] = None,
+    ) -> _OpenAICompatResponse:
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if response_format is not None:
+            payload["response_format"] = response_format
+        request = urllib.request.Request(
+            self._client._base_url + "/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self._client._api_key}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=self._client._timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        content = data["choices"][0]["message"]["content"]
+        return _OpenAICompatResponse(content)
+
+
+class _OpenAICompatChat:
+    def __init__(self, client: "_OpenAICompatClient") -> None:
+        self.completions = _OpenAICompatCompletions(client)
+
+
+class _OpenAICompatClient:
+    def __init__(self, api_key: str, base_url: str, timeout: float) -> None:
+        self._api_key = api_key
+        self._base_url = str(base_url).rstrip("/")
+        self._timeout = timeout
+        self.chat = _OpenAICompatChat(self)
+
+
 class AgentAPI:
     """OpenAI-compatible client for all supported MLLMs."""
 
@@ -260,13 +324,24 @@ class AgentAPI:
         if os.environ.get("BAO_DISABLE_PROXY", "0") == "1":
             disable_proxy()
 
-        from openai import OpenAI
+        try:
+            from openai import OpenAI
 
-        self.client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-            timeout=self.timeout,
-        )
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                timeout=self.timeout,
+            )
+        except Exception as exc:
+            print(
+                f"[ai_agent] openai client unavailable ({exc}); "
+                "using built-in HTTP client"
+            )
+            self.client = _OpenAICompatClient(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                timeout=self.timeout,
+            )
 
     # ------------------------------------------------------------------
     # Public interface
