@@ -122,8 +122,11 @@ def build_prompt(
     lines.append("Available actions:")
     lines.append(options)
     lines.append("")
-    lines.append("Choose exactly one action. Reply with 'Thought: <reasoning>' on one line")
-    lines.append("and 'Choice: [N]' on the next line, where N is the option number.")
+    lines.append(
+        'Reply with exactly one JSON object: '
+        '{"action": "<action>", "confidence": 0.0-1.0, '
+        '"reasoning": "<short text>"}.'
+    )
     lines.append(f"You have at most {max_steps} steps in this episode.")
     return "\n".join(lines)
 

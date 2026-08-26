@@ -174,6 +174,25 @@ def parse_action_json(text: Any) -> Optional[Dict[str, Any]]:
     }
 
 
+def parse_action_text(text: Any) -> Optional[str]:
+    """Fallback parser for non-JSON responses (e.g. 'Choice: [3]')."""
+    if text is None:
+        return None
+    cleaned = str(text).strip()
+    if not cleaned:
+        return None
+    match = re.search(r"Choice:?[\n\s]*\[?(\d+)\]?", cleaned, re.IGNORECASE)
+    if match:
+        index = int(match.group(1))
+        if 1 <= index <= len(ACTIONS):
+            return ACTIONS[index - 1]
+    lowered = cleaned.lower()
+    for action in sorted(ACTIONS, key=len, reverse=True):
+        if action in lowered:
+            return action
+    return None
+
+
 def build_prompt(level: int, context: Optional[Dict[str, Any]] = None) -> str:
     """Build the per-level English prompt, always requiring JSON output.
 
@@ -375,7 +394,16 @@ class AgentAPI:
                 if parsed is not None:
                     self._log(f"MODEL RESPONSE:\n{response}")
                     return parsed
-                last_error = "response was not valid JSON"
+                action_name = parse_action_text(response)
+                if action_name is not None:
+                    self._log(f"MODEL RESPONSE (text fallback):\n{response}")
+                    return {
+                        "action": action_name,
+                        "confidence": 0.5,
+                        "reasoning": f"parsed from text: {str(response)[:200]}",
+                    }
+                self._log(f"MODEL RESPONSE (unparseable):\n{response}")
+                last_error = "response was not a valid JSON or action text"
             except Exception as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 self._log(f"REQUEST ERROR: {last_error}")
