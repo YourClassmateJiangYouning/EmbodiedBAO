@@ -35,19 +35,6 @@ import numpy as np
 
 EXPLORATORY_ACTIONS = {"backward", "left", "right", "turn_left", "turn_right"}
 
-STEP_CLASS_ZH = {
-    "insight": "顿悟",
-    "gradual": "渐悟",
-    "intermediate": "过渡",
-}
-
-ONE_SHOT_CLASS_ZH = {
-    "one_shot": "一次性调整",
-    "gradual": "渐进式调整",
-    "intermediate": "过渡",
-    "none": "无旋转",
-}
-
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -135,7 +122,6 @@ def compute_step_ness(
     return {
         "step_ness": round(step_ness, 4),
         "step_ness_class": step_class,
-        "step_ness_class_zh": STEP_CLASS_ZH[step_class],
         "max_raw_step_improvement": round(max_raw_improvement, 4),
         "first_success_episode": first_success,
         "smoothed_success_rate": [round(float(v), 4) for v in rates],
@@ -387,7 +373,6 @@ def compute_one_shot_adjustment(
             "max_single_rotation_deg": 0.0,
             "one_shot_index": 0.0,
             "one_shot_class": "none",
-            "one_shot_class_zh": ONE_SHOT_CLASS_ZH["none"],
             "max_rotation_run_deg": 0.0,
         }
 
@@ -410,7 +395,6 @@ def compute_one_shot_adjustment(
         "max_single_rotation_deg": round(max_single, 3),
         "one_shot_index": round(index, 4),
         "one_shot_class": one_class,
-        "one_shot_class_zh": ONE_SHOT_CLASS_ZH[one_class],
         "max_rotation_run_deg": round(max_run, 3),
     }
 
@@ -480,7 +464,6 @@ def analyze_episodes(
             "mean_index": round(mean_index, 4),
             "one_shot_ratio": round(one_shot_ratio, 4),
             "class": mean_class,
-            "class_zh": ONE_SHOT_CLASS_ZH[mean_class],
         },
     }
 
@@ -496,7 +479,6 @@ def table_row(analysis: Dict[str, Any]) -> Dict[str, Any]:
         "episodes": analysis["episodes"],
         "step_ness": step["step_ness"],
         "step_ness_class": step["step_ness_class"],
-        "step_ness_class_zh": step["step_ness_class_zh"],
         "first_success_episode": step["first_success_episode"],
         "strategy_switch_count": switches["switch_count"],
         "first_strategy_switch_episode": switches["first_switch_episode"],
@@ -508,7 +490,6 @@ def table_row(analysis: Dict[str, Any]) -> Dict[str, Any]:
         "one_shot_index_mean": one_shot["mean_index"],
         "one_shot_ratio": one_shot["one_shot_ratio"],
         "one_shot_class": one_shot["class"],
-        "one_shot_class_zh": one_shot["class_zh"],
     }
 
 
@@ -532,14 +513,14 @@ def format_markdown_table(rows: Sequence[Dict[str, Any]]) -> str:
             str(row["model"]),
             str(row["level"]),
             f"{row['step_ness']:.4f}",
-            row["step_ness_class_zh"],
+            row["step_ness_class"],
             "-" if row["first_success_episode"] is None else str(row["first_success_episode"]),
             str(row["strategy_switch_count"]),
             "-" if row["exploration_failed_avg"] is None else f"{row['exploration_failed_avg']:.4f}",
             "-" if row["exploration_success_avg"] is None else f"{row['exploration_success_avg']:.4f}",
             "-" if row["exploration_delta"] is None else f"{row['exploration_delta']:.4f}",
             f"{row['one_shot_index_mean']:.4f}",
-            row["one_shot_class_zh"],
+            row["one_shot_class"],
         ]
         lines.append("| " + " | ".join(values) + " |")
     return "\n".join(lines)
@@ -703,7 +684,7 @@ def main() -> int:
         with open(json_path, "w", encoding="utf-8") as handle:
             json.dump(analysis, handle, indent=2, ensure_ascii=False)
         print(f"[analysis] {model}: step_ness={analysis['step_ness']['step_ness']:.4f} "
-              f"({analysis['step_ness']['step_ness_class_zh']}), "
+              f"({analysis['step_ness']['step_ness_class']}), "
               f"switches={analysis['strategy_switches']['switch_count']}, "
               f"one_shot_index={analysis['one_shot_adjustment']['mean_index']:.4f}, "
               f"TSR={analysis['mirrorbench_metrics']['tsr']}, "
