@@ -584,8 +584,10 @@ class BAOEnv:
 
     def _update_camera(self) -> None:
         pos = self._root_position()
-        eye = np.array([pos[0], ROBOT_HEAD_HEIGHT, pos[2]])
-        target = eye + _forward_vector(np.radians(self._robot_yaw)) * 5.0
+        forward = _forward_vector(np.radians(self._robot_yaw))
+        # Offset slightly forward so the camera is not inside the H1 head mesh.
+        eye = np.array([pos[0], ROBOT_HEAD_HEIGHT, pos[2]]) + forward * 0.25
+        target = eye + forward * 5.0
         set_camera_view(
             eye=eye.tolist(),
             target=target.tolist(),
