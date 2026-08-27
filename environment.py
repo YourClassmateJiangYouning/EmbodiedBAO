@@ -35,7 +35,7 @@ try:
     from isaacsim.core.utils.viewports import set_camera_view
     from isaacsim.sensors.camera import Camera
     from isaacsim.storage.native import get_assets_root_path
-    from pxr import Gf, PhysxSchema, Sdf, UsdGeom, UsdPhysics, UsdShade
+    from pxr import Gf, PhysxSchema, Sdf, UsdGeom, UsdLux, UsdPhysics, UsdShade
     import carb
 
     _HAS_ISAAC_SIM = True
@@ -222,6 +222,7 @@ class BAOEnv:
         self._create_wall()
         self._create_target()
         self._create_camera()
+        self._create_lights()
         self._load_robot()
         self._update_camera()
 
@@ -279,6 +280,15 @@ class BAOEnv:
             frequency=20,
             resolution=resolution,
         )
+
+    def _create_lights(self) -> None:
+        """Add scene lights; without them the camera images are black."""
+        distant = UsdLux.DistantLight.Define(self.stage, "/World/DistantLight")
+        distant.GetIntensityAttr().Set(1000.0)
+        distant.AddRotateXYZOp().Set(Gf.Vec3d(-60.0, 0.0, 0.0))
+
+        dome = UsdLux.DomeLight.Define(self.stage, "/World/DomeLight")
+        dome.GetIntensityAttr().Set(200.0)
 
     def _load_robot(self) -> None:
         usd_path = self._resolve_robot_usd_path()
