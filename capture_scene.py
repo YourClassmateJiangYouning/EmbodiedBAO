@@ -40,7 +40,7 @@ def main() -> int:
         print(f"saved: {os.path.abspath(args.output)} brightness={float(rgb.mean()):.1f}")
 
         views = {
-            "scene_third.png": ([0.8, 1.8, -3.0], [2.0, 1.2, 0.0]),
+            "scene_third.png": ([0.5, 3.0, -5.0], [2.0, 1.2, 0.0]),
             "scene_top.png": ([2.0, 4.0, 0.0], [2.0, 0.0, 0.0]),
         }
         for name, (eye, target) in views.items():
