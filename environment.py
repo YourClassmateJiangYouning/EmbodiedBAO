@@ -111,6 +111,24 @@ def _forward_vector(yaw_rad: float) -> np.ndarray:
     return np.array([np.cos(yaw_rad), 0.0, -np.sin(yaw_rad)], dtype=float)
 
 
+def _user_to_isaac_pos(pos: np.ndarray) -> np.ndarray:
+    """Map a user-frame position (y up) to Isaac Sim (z up): swap y and z."""
+    p = np.asarray(pos, dtype=float)
+    return np.array([p[0], p[2], p[1]], dtype=float)
+
+
+def _isaac_to_user_pos(pos: np.ndarray) -> np.ndarray:
+    """Map an Isaac Sim position (z up) back to the user frame (y up)."""
+    p = np.asarray(pos, dtype=float)
+    return np.array([p[0], p[2], p[1]], dtype=float)
+
+
+def _user_to_isaac_scale(scale: np.ndarray) -> np.ndarray:
+    """Swap the y/z components of a scale vector for Isaac Sim."""
+    s = np.asarray(scale, dtype=float)
+    return np.array([s[0], s[2], s[1]], dtype=float)
+
+
 def _panel_boxes() -> List[Tuple[np.ndarray, np.ndarray]]:
     """Return (center, half-extents) of the two wall panels."""
     z_center = PANEL_WIDTH / 2.0 + CHANNEL_HALF_WIDTH
@@ -234,9 +252,13 @@ class BAOEnv:
         FixedCuboid(
             prim_path="/World/Ground",
             name="ground",
-            position=np.array([2.0, -GROUND_THICKNESS / 2.0, 0.0]),
+            position=_user_to_isaac_pos(
+                np.array([2.0, -GROUND_THICKNESS / 2.0, 0.0])
+            ),
             size=1.0,
-            scale=np.array([SCENE_SIZE, GROUND_THICKNESS, SCENE_SIZE]),
+            scale=_user_to_isaac_scale(
+                np.array([SCENE_SIZE, GROUND_THICKNESS, SCENE_SIZE])
+            ),
         )
 
     def _create_wall(self) -> None:
@@ -245,9 +267,13 @@ class BAOEnv:
             FixedCuboid(
                 prim_path=f"/World/WallPanel_{i}",
                 name=f"wall_panel_{i}",
-                position=np.array([WALL_X, WALL_HEIGHT / 2.0, sign * z_center]),
+                position=_user_to_isaac_pos(
+                    np.array([WALL_X, WALL_HEIGHT / 2.0, sign * z_center])
+                ),
                 size=1.0,
-                scale=np.array([WALL_THICKNESS, WALL_HEIGHT, PANEL_WIDTH]),
+                scale=_user_to_isaac_scale(
+                    np.array([WALL_THICKNESS, WALL_HEIGHT, PANEL_WIDTH])
+                ),
             )
             self._create_and_bind_glass_material(
                 f"/World/WallPanel_{i}", f"/World/Looks/GlassMaterial_{i}"
@@ -261,7 +287,9 @@ class BAOEnv:
         sphere.GetExtentAttr().Set([(-r, -r, -r), (r, r, r)])
         prim = sphere.GetPrim()
         UsdPhysics.CollisionAPI.Apply(prim)
-        UsdGeom.Xformable(prim).AddTranslateOp().Set(Gf.Vec3d(*TARGET_POS))
+        UsdGeom.Xformable(prim).AddTranslateOp().Set(
+            Gf.Vec3d(*_user_to_isaac_pos(TARGET_POS))
+        )
         self._create_and_bind_material(
             prim_path,
             "/World/Looks/TargetMaterial",
@@ -276,7 +304,9 @@ class BAOEnv:
         )
         self.camera = Camera(
             prim_path="/World/Camera",
-            translation=np.array([ROBOT_START_POS[0], ROBOT_HEAD_HEIGHT, ROBOT_START_POS[2]]),
+            translation=_user_to_isaac_pos(
+                np.array([ROBOT_START_POS[0], ROBOT_HEAD_HEIGHT, ROBOT_START_POS[2]])
+            ),
             frequency=20,
             resolution=resolution,
         )
@@ -504,9 +534,9 @@ class BAOEnv:
 
     @staticmethod
     def _yaw_quat(yaw_deg: float) -> np.ndarray:
-        """Quaternion (x, y, z, w) for rotation around +y."""
+        """Quaternion (x, y, z, w) for yaw around Isaac Sim's +z (up)."""
         half = float(np.radians(yaw_deg)) / 2.0
-        return np.array([np.cos(half), 0.0, np.sin(half), 0.0])
+        return np.array([0.0, 0.0, np.sin(half), np.cos(half)])
 
     def _set_robot_pose(self, position: np.ndarray, yaw_deg: float) -> None:
         if self.robot_root is None:
@@ -514,14 +544,17 @@ class BAOEnv:
         pos = np.asarray(position, dtype=float).copy()
         pos[1] += float(self.task_dict.get("robot_root_y_offset", 0.0))
         quat = self._yaw_quat(yaw_deg)
-        self.robot_root.set_world_poses(positions=np.array([pos]), orientations=np.array([quat]))
+        self.robot_root.set_world_poses(
+            positions=np.array([_user_to_isaac_pos(pos)]),
+            orientations=np.array([quat]),
+        )
         self._robot_yaw = float(yaw_deg)
 
     def _root_position(self) -> np.ndarray:
         if self.robot_root is None:
             return ROBOT_START_POS.copy()
         pos = self.robot_root.get_world_poses()[0][0]
-        return np.asarray(pos, dtype=float)
+        return _isaac_to_user_pos(np.asarray(pos, dtype=float))
 
     def _init_robot_controller(self) -> bool:
         if not self.task_dict.get("robot_physics", True):
@@ -588,11 +621,21 @@ class BAOEnv:
         # Offset slightly forward so the camera is not inside the H1 head mesh.
         eye = np.array([pos[0], ROBOT_HEAD_HEIGHT, pos[2]]) + forward * 0.25
         target = eye + forward * 5.0
-        set_camera_view(
-            eye=eye.tolist(),
-            target=target.tolist(),
-            camera_prim_path="/World/Camera",
-        )
+        eye_isaac = _user_to_isaac_pos(eye)
+        target_isaac = _user_to_isaac_pos(target)
+        try:
+            set_camera_view(
+                eye=eye_isaac.tolist(),
+                target=target_isaac.tolist(),
+                up=[0.0, 0.0, 1.0],
+                camera_prim_path="/World/Camera",
+            )
+        except TypeError:
+            set_camera_view(
+                eye=eye_isaac.tolist(),
+                target=target_isaac.tolist(),
+                camera_prim_path="/World/Camera",
+            )
 
     # ------------------------------------------------------------------
     # Public environment interface
@@ -644,7 +687,7 @@ class BAOEnv:
         if self._articulation_ok and self.hand_xform is not None:
             try:
                 pos = self.hand_xform.get_world_poses()[0][0]
-                return np.asarray(pos, dtype=float)
+                return _isaac_to_user_pos(np.asarray(pos, dtype=float))
             except Exception:
                 pass
         return self._analytic_hand_position()
