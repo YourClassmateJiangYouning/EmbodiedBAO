@@ -120,17 +120,22 @@ def normalize_model_name(model_name: str) -> str:
 
 
 def encode_image(image: Any) -> str:
-    """Encode a numpy RGB image (or image path) as a base64 PNG data URL."""
+    """Encode a numpy RGB image (or image path) as a base64 JPEG data URL."""
     if isinstance(image, str):
         with open(image, "rb") as handle:
             data = base64.b64encode(handle.read()).decode("utf-8")
-        return f"data:image/png;base64,{data}"
+        return f"data:image/jpeg;base64,{data}"
     from PIL import Image
 
+    image = np.asarray(image)
+    if image.ndim == 3 and image.shape[2] == 4:
+        image = Image.fromarray(image).convert("RGB")
+    else:
+        image = Image.fromarray(image)
     buffer = io.BytesIO()
-    Image.fromarray(image).save(buffer, format="PNG")
+    image.save(buffer, format="JPEG")
     data = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    return f"data:image/png;base64,{data}"
+    return f"data:image/jpeg;base64,{data}"
 
 
 def parse_action_json(text: Any) -> Optional[Dict[str, Any]]:

@@ -436,7 +436,9 @@ class BAOEnv:
     # ------------------------------------------------------------------
 
     def _create_and_bind_glass_material(self, prim_path: str, mat_path: str) -> None:
-        if not self.task_dict.get("use_omni_glass", True):
+        # OmniGlass.mdl is not reliably available in every Isaac Sim build;
+        # default to a translucent PreviewSurface so the wall is always see-through.
+        if not self.task_dict.get("use_omni_glass", False):
             self._create_and_bind_material(
                 prim_path,
                 mat_path,
@@ -517,7 +519,12 @@ class BAOEnv:
             return False
         try:
             if self._articulation is None:
-                from isaacsim.core.api.articulations import Articulation
+                try:
+                    from isaacsim.core.api.articulations import Articulation
+                except Exception:
+                    from isaacsim.core.api.articulations.articulation import (
+                        Articulation,
+                    )
 
                 self._articulation = Articulation(prim_paths_expr=self.robot_prim_path)
                 self._articulation.initialize()
