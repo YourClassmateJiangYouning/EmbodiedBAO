@@ -234,14 +234,15 @@ class BAOEnv:
         self._articulation_ok = False
         self._reach_joint_indices: Optional[np.ndarray] = None
         self._robot_yaw = ROBOT_START_YAW_DEG
+        self._robot_ground_offset = 0.0
         self.reaching = False
 
         self._create_ground()
         self._create_wall()
         self._create_target()
-        self._create_camera()
         self._create_lights()
         self._load_robot()
+        self._create_camera()
         self._update_camera()
 
     # ------------------------------------------------------------------
@@ -310,6 +311,7 @@ class BAOEnv:
             frequency=20,
             resolution=resolution,
         )
+        self.camera.set_focal_length(float(self.task_dict.get("camera_focal", 3.0)))
 
     def _create_lights(self) -> None:
         """Add scene lights; without them the camera images are black."""
@@ -327,8 +329,32 @@ class BAOEnv:
         if not self.task_dict.get("robot_physics", True):
             self._disable_robot_collisions()
         self.robot_root = XFormPrim(prim_paths_expr=self.robot_prim_path)
+        self._robot_ground_offset = self._compute_robot_ground_offset()
         self._set_robot_pose(ROBOT_START_POS, ROBOT_START_YAW_DEG)
         self._find_hand_prim()
+
+    def _compute_robot_ground_offset(self) -> float:
+        """Raise the robot so its lowest mesh point sits on the ground (z=0)."""
+        try:
+            from pxr import Usd, UsdGeom
+
+            cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_])
+            min_z = float("inf")
+            for prim in self.stage.Traverse():
+                path = str(prim.GetPath())
+                if not path.startswith(self.robot_prim_path):
+                    continue
+                bound = cache.ComputeWorldBound(prim)
+                range3d = bound.ComputeAlignedRange()
+                if range3d.IsEmpty:
+                    continue
+                min_z = min(min_z, range3d.GetMin()[2])
+            if min_z == float("inf"):
+                return 0.0
+            return float(-min_z)
+        except Exception as exc:
+            print(f"[BAOEnv] ground offset detection failed, using 0.0: {exc}")
+            return 0.0
 
     def _resolve_robot_usd_path(self) -> str:
         candidates: List[str] = []
@@ -544,8 +570,10 @@ class BAOEnv:
         pos = np.asarray(position, dtype=float).copy()
         pos[1] += float(self.task_dict.get("robot_root_y_offset", 0.0))
         quat = self._yaw_quat(yaw_deg)
+        pos_isaac = _user_to_isaac_pos(pos)
+        pos_isaac[2] += self._robot_ground_offset
         self.robot_root.set_world_poses(
-            positions=np.array([_user_to_isaac_pos(pos)]),
+            positions=np.array([pos_isaac]),
             orientations=np.array([quat]),
         )
         self._robot_yaw = float(yaw_deg)
@@ -610,6 +638,25 @@ class BAOEnv:
             )
         self.reaching = reaching
 
+    def _set_standing_joint_targets(self) -> None:
+        """Zero hip/knee joints so the robot keeps an upright standing pose."""
+        if not self._articulation_ok or self._articulation is None:
+            return
+        try:
+            names = [str(n) for n in self._articulation.get_dof_names()]
+            indices = [
+                i
+                for i, name in enumerate(names)
+                if any(key in name.lower() for key in ("hip", "knee"))
+            ]
+            if indices:
+                self._articulation.set_joint_targets(
+                    positions=np.zeros(len(indices)),
+                    joint_indices=np.array(indices, dtype=int),
+                )
+        except Exception as exc:
+            print(f"[BAOEnv] standing joint init skipped: {exc}")
+
     def _analytic_hand_position(self) -> np.ndarray:
         root = self._root_position()
         local = HAND_LOCAL_REACH if self.reaching else HAND_LOCAL_REST
@@ -618,8 +665,9 @@ class BAOEnv:
     def _update_camera(self) -> None:
         pos = self._root_position()
         forward = _forward_vector(np.radians(self._robot_yaw))
-        # Offset slightly forward so the camera is not inside the H1 head mesh.
-        eye = np.array([pos[0], ROBOT_HEAD_HEIGHT, pos[2]]) + forward * 0.25
+        # Offset forward so the camera is not inside the H1 head mesh.
+        forward_offset = float(self.task_dict.get("camera_forward_offset", 0.5))
+        eye = np.array([pos[0], ROBOT_HEAD_HEIGHT, pos[2]]) + forward * forward_offset
         target = eye + forward * 5.0
         eye_isaac = _user_to_isaac_pos(eye)
         target_isaac = _user_to_isaac_pos(target)
@@ -647,6 +695,7 @@ class BAOEnv:
         self.camera.initialize()
         self._init_robot_controller()
         self._set_robot_pose(ROBOT_START_POS, ROBOT_START_YAW_DEG)
+        self._set_standing_joint_targets()
         self.reaching = False
         if self._articulation is not None:
             try:
