@@ -16,6 +16,23 @@ import json
 import os
 
 from isaacsim import SimulationApp
+from isaacsim.core.utils.viewports import set_camera_view
+
+
+def _set_camera_view(eye, target, up, camera_prim_path):
+    try:
+        set_camera_view(
+            eye=eye,
+            target=target,
+            up=up,
+            camera_prim_path=camera_prim_path,
+        )
+    except TypeError:
+        set_camera_view(
+            eye=eye,
+            target=target,
+            camera_prim_path=camera_prim_path,
+        )
 
 
 def main() -> int:
@@ -30,8 +47,6 @@ def main() -> int:
         from PIL import Image
 
         import environment
-        from isaacsim.core.utils.viewports import set_camera_view
-
         task_dict = json.loads(args.env_config)
         task_dict["headless"] = args.headless
         env = environment.setup_scene(simulation_app, task_dict=task_dict)
@@ -56,17 +71,24 @@ def main() -> int:
             "scene_top.png": ([2.0, 0.0, 4.0], [2.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         }
         for name, (eye, target, up) in views.items():
-            set_camera_view(
-                eye=eye,
-                target=target,
-                up=up,
-                camera_prim_path="/World/Camera",
-            )
-            for _ in range(5):
-                env.world.step(render=True)
-            view_rgb = env.camera.get_rgb()
-            Image.fromarray(view_rgb).save(name)
-            print(f"saved: {os.path.abspath(name)} brightness={float(view_rgb.mean()):.1f}")
+            try:
+                _set_camera_view(
+                    eye=eye,
+                    target=target,
+                    up=up,
+                    camera_prim_path="/World/Camera",
+                )
+                for _ in range(5):
+                    env.world.step(render=True)
+                view_rgb = env.camera.get_rgb()
+                Image.fromarray(view_rgb).save(name)
+                print(
+                    f"saved: {os.path.abspath(name)} "
+                    f"brightness={float(view_rgb.mean()):.1f}"
+                )
+            except Exception as exc:
+                print(f"failed to save {name}: {exc}")
+        print("all views done")
     finally:
         if "env" in locals():
             env.close()
