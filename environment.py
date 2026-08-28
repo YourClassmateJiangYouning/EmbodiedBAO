@@ -286,10 +286,6 @@ class BAOEnv:
             self._create_and_bind_glass_material(
                 f"/World/WallPanel_{i}", f"/World/Looks/GlassMaterial_{i}"
             )
-            # The glass is visually transparent; keep only the collision gate.
-            UsdGeom.Imageable(
-                self.stage.GetPrimAtPath(f"/World/WallPanel_{i}")
-            ).MakeInvisible()
 
         for sign in (-1.0, 1.0):
             edge_id = 0 if sign < 0 else 1
@@ -343,7 +339,7 @@ class BAOEnv:
             frequency=20,
             resolution=resolution,
         )
-        self.camera.set_focal_length(float(self.task_dict.get("camera_focal", 3.0)))
+        self.camera.set_focal_length(float(self.task_dict.get("camera_focal", 2.5)))
 
     def _create_lights(self) -> None:
         """Add scene lights; without them the camera images are black."""
@@ -780,13 +776,12 @@ class BAOEnv:
     def _update_camera(self) -> None:
         pos = self._root_position()
         forward = _forward_vector(np.radians(self._robot_yaw))
-        # Place the camera above the head and look down slightly toward the
-        # ball, so the view is not occluded by the H1 head mesh.
+        # Keep the observation camera at head height and always look at the
+        # green ball so it stays centered in the frame.
         forward_offset = float(self.task_dict.get("camera_forward_offset", 0.1))
-        camera_height = float(self.task_dict.get("camera_height", 1.9))
+        camera_height = float(self.task_dict.get("camera_height", 1.55))
         eye = np.array([pos[0], camera_height, pos[2]]) + forward * forward_offset
-        target = eye + forward * 4.0
-        target[1] = 1.2  # look toward the green ball height
+        target = np.asarray(TARGET_POS, dtype=float).copy()
         eye_isaac = _user_to_isaac_pos(eye)
         target_isaac = _user_to_isaac_pos(target)
         try:

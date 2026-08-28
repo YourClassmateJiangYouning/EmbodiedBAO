@@ -35,6 +35,7 @@ def main() -> int:
         task_dict["headless"] = args.headless
         env = environment.setup_scene(simulation_app, task_dict=task_dict)
         rgb, _ = env.reset_scene()
+        print("articulation_ok:", env._articulation_ok)
         print("stage_up_axis:", env.world.stage.GetMetadata("upAxis"))
         print("robot_root_pose:", env.robot_root.get_world_poses())
         from pxr import Usd, UsdGeom
@@ -57,11 +58,12 @@ def main() -> int:
         Image.fromarray(rgb).save(args.output)
         print(
             f"saved: {os.path.abspath(args.output)} "
-            f"brightness={float(rgb.mean()):.1f} std={float(rgb.std()):.1f}"
+            f"brightness={float(rgb.mean()):.1f} std={float(rgb.std()):.1f} "
+            f"center={rgb[rgb.shape[0] // 2, rgb.shape[1] // 2].tolist()}"
         )
 
         views = {
-            "scene_third.png": ([0.5, -6.0, 3.5], [2.0, 0.0, 1.2], [0.0, 0.0, 1.0]),
+            "scene_third.png": ([1.0, -4.5, 2.2], [2.4, 0.0, 1.2], [0.0, 0.0, 1.0]),
             "scene_top.png": ([2.0, 0.0, 4.0], [2.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         }
         for name, (eye, target, up) in views.items():
@@ -92,7 +94,8 @@ def main() -> int:
                 print(
                     f"saved: {os.path.abspath(name)} "
                     f"brightness={float(view_rgb.mean()):.1f} "
-                    f"std={float(view_rgb.std()):.1f}"
+                    f"std={float(view_rgb.std()):.1f} "
+                    f"center={view_rgb[view_rgb.shape[0] // 2, view_rgb.shape[1] // 2].tolist()}"
                 )
             except Exception as exc:
                 print(f"failed to save {name}: {exc}")
