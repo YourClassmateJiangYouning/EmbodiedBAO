@@ -16,23 +16,6 @@ import json
 import os
 
 from isaacsim import SimulationApp
-from isaacsim.core.utils.viewports import set_camera_view
-
-
-def _set_camera_view(eye, target, up, camera_prim_path):
-    try:
-        set_camera_view(
-            eye=eye,
-            target=target,
-            up=up,
-            camera_prim_path=camera_prim_path,
-        )
-    except TypeError:
-        set_camera_view(
-            eye=eye,
-            target=target,
-            camera_prim_path=camera_prim_path,
-        )
 
 
 def main() -> int:
@@ -45,6 +28,7 @@ def main() -> int:
     simulation_app = SimulationApp({"headless": args.headless})
     try:
         from PIL import Image
+        from isaacsim.core.utils.viewports import set_camera_view
 
         import environment
         task_dict = json.loads(args.env_config)
@@ -72,12 +56,19 @@ def main() -> int:
         }
         for name, (eye, target, up) in views.items():
             try:
-                _set_camera_view(
-                    eye=eye,
-                    target=target,
-                    up=up,
-                    camera_prim_path="/World/Camera",
-                )
+                try:
+                    set_camera_view(
+                        eye=eye,
+                        target=target,
+                        up=up,
+                        camera_prim_path="/World/Camera",
+                    )
+                except TypeError:
+                    set_camera_view(
+                        eye=eye,
+                        target=target,
+                        camera_prim_path="/World/Camera",
+                    )
                 for _ in range(5):
                     env.world.step(render=True)
                 view_rgb = env.camera.get_rgb()
