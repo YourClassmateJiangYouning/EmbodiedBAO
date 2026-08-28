@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 
 from pxr import Sdf, Usd, UsdGeom, UsdPhysics
@@ -50,9 +51,12 @@ def main() -> int:
             try:
                 bound = cache.ComputeWorldBound(prim)
                 rng = bound.ComputeAlignedRange()
-                if not rng.IsEmpty:
-                    lo = rng.GetMin()
-                    hi = rng.GetMax()
+                lo = rng.GetMin()
+                hi = rng.GetMax()
+                if all(
+                    math.isfinite(v)
+                    for v in (lo[0], lo[1], lo[2], hi[0], hi[1], hi[2])
+                ):
                     min_corner = lo if min_corner is None else [min(a, b) for a, b in zip(min_corner, lo)]
                     max_corner = hi if max_corner is None else [max(a, b) for a, b in zip(max_corner, hi)]
             except Exception:

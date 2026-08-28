@@ -40,14 +40,14 @@ def main() -> int:
         print(f"saved: {os.path.abspath(args.output)} brightness={float(rgb.mean()):.1f}")
 
         views = {
-            "scene_third.png": ([0.5, -5.0, 3.0], [2.0, 0.0, 1.2]),
-            "scene_top.png": ([2.0, 0.0, 4.0], [2.0, 0.0, 0.0]),
+            "scene_third.png": ([0.5, -6.0, 3.5], [2.0, 0.0, 1.2], [0.0, 0.0, 1.0]),
+            "scene_top.png": ([2.0, 0.0, 4.0], [2.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         }
-        for name, (eye, target) in views.items():
+        for name, (eye, target, up) in views.items():
             set_camera_view(
                 eye=eye,
                 target=target,
-                up=[0.0, 0.0, 1.0],
+                up=up,
                 camera_prim_path="/World/Camera",
             )
             for _ in range(5):

@@ -21,6 +21,7 @@ camera that follows the robot root.
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -346,12 +347,19 @@ class BAOEnv:
                     continue
                 bound = cache.ComputeWorldBound(prim)
                 range3d = bound.ComputeAlignedRange()
-                if range3d.IsEmpty:
+                lo = range3d.GetMin()
+                hi = range3d.GetMax()
+                if not all(
+                    math.isfinite(v)
+                    for v in (lo[0], lo[1], lo[2], hi[0], hi[1], hi[2])
+                ):
                     continue
-                min_z = min(min_z, range3d.GetMin()[2])
+                min_z = min(min_z, lo[2])
             if min_z == float("inf"):
                 return 0.0
-            return float(-min_z)
+            offset = float(-min_z)
+            print(f"[BAOEnv] robot ground offset = {offset:.4f} m")
+            return offset
         except Exception as exc:
             print(f"[BAOEnv] ground offset detection failed, using 0.0: {exc}")
             return 0.0
@@ -590,12 +598,24 @@ class BAOEnv:
             return False
         try:
             if self._articulation is None:
-                try:
-                    from isaacsim.core.api.articulations import Articulation
-                except Exception:
-                    from isaacsim.core.api.articulations.articulation import (
-                        Articulation,
-                    )
+                import_errors = []
+                articulation_class = None
+                for module_name in (
+                    "isaacsim.core.api.articulations",
+                    "isaacsim.core.articulations",
+                    "omni.isaac.core.articulations",
+                ):
+                    try:
+                        articulation_class = getattr(
+                            __import__(module_name, fromlist=["Articulation"]),
+                            "Articulation",
+                        )
+                        break
+                    except Exception as exc:
+                        import_errors.append(f"{module_name}: {exc}")
+                if articulation_class is None:
+                    raise ImportError("; ".join(import_errors))
+                Articulation = articulation_class
 
                 self._articulation = Articulation(prim_paths_expr=self.robot_prim_path)
                 self._articulation.initialize()
@@ -622,7 +642,7 @@ class BAOEnv:
             return None
 
         right_shoulder = pick([["right", "shoulder_pitch"], ["shoulder_pitch"]])
-        right_elbow = pick([["right", "elbow_pitch"], ["elbow_pitch"]])
+        right_elbow = pick([["right", "elbow"], ["elbow"]])
         if right_shoulder is None or right_elbow is None:
             return None
         return np.array([right_shoulder, right_elbow], dtype=int)
@@ -666,7 +686,7 @@ class BAOEnv:
         pos = self._root_position()
         forward = _forward_vector(np.radians(self._robot_yaw))
         # Offset forward so the camera is not inside the H1 head mesh.
-        forward_offset = float(self.task_dict.get("camera_forward_offset", 0.5))
+        forward_offset = float(self.task_dict.get("camera_forward_offset", 0.35))
         eye = np.array([pos[0], ROBOT_HEAD_HEIGHT, pos[2]]) + forward * forward_offset
         target = eye + forward * 5.0
         eye_isaac = _user_to_isaac_pos(eye)
