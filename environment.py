@@ -235,6 +235,7 @@ class BAOEnv:
         self.hand_prim_path: Optional[str] = None
         self.head_xform: Optional[XFormPrim] = None
         self.head_prim_path: Optional[str] = None
+        self.head_visual_path: Optional[str] = None
         self.eye_camera: Optional[Camera] = None
 
         self._articulation: Any = None
@@ -544,21 +545,26 @@ class BAOEnv:
             self.hand_xform = None
 
     def _find_head_camera_link(self) -> None:
-        """Locate the H1 head camera module mounting link (d435)."""
+        """Locate the H1 head camera module (prefer the visual lens mesh)."""
         scored: List[Tuple[int, str]] = []
         for prim in self.stage.Traverse():
             path = str(prim.GetPath())
             if not path.startswith(self.robot_prim_path):
                 continue
             name = prim.GetName().lower()
+            is_visual = "/visuals/" in path.lower()
             if "d435" in name and "rgb" in name:
-                scored.append((2, path))
+                scored.append((3 if is_visual else 2, path))
             elif "d435" in name and "imager" in name:
+                scored.append((2 if is_visual else 1, path))
+            elif "d435" in name and is_visual:
                 scored.append((1, path))
         if not scored:
             return
         scored.sort(key=lambda item: -item[0])
         self.head_prim_path = scored[0][1]
+        if "/visuals/" in self.head_prim_path.lower():
+            self.head_visual_path = self.head_prim_path
         try:
             self.head_xform = XFormPrim(prim_paths_expr=self.head_prim_path)
         except Exception as exc:
@@ -798,6 +804,40 @@ class BAOEnv:
                     return
                 except TypeError:
                     continue
+        controller_fn = getattr(art, "get_articulation_controller", None)
+        if callable(controller_fn):
+            try:
+                controller = controller_fn()
+                for name in ("set_joint_target_positions", "set_joint_positions"):
+                    fn = getattr(controller, name, None)
+                    if not callable(fn):
+                        continue
+                    try:
+                        fn(positions=pos, joint_indices=idx)
+                        return
+                    except TypeError:
+                        fn(pos, idx)
+                        return
+            except Exception:
+                pass
+        set_pos = getattr(art, "set_joint_positions", None)
+        if callable(set_pos):
+            try:
+                set_pos(positions=pos, joint_indices=idx)
+                return
+            except TypeError:
+                try:
+                    set_pos(pos, idx)
+                    return
+                except TypeError:
+                    pass
+        apply_action = getattr(art, "apply_action", None)
+        if callable(apply_action):
+            try:
+                apply_action({"joint_positions": pos, "joint_indices": idx})
+                return
+            except Exception:
+                pass
         raise AttributeError("no joint-target setter on articulation")
 
     def _articulation_joint_positions(self) -> np.ndarray:
@@ -917,12 +957,7 @@ class BAOEnv:
         """Aim the robot eye camera from the H1 head d435 mounting point."""
         if self.eye_camera is None:
             return
-        if self.head_xform is not None:
-            head_isaac = self.head_xform.get_world_poses()[0][0]
-            head = _isaac_to_user_pos(np.asarray(head_isaac, dtype=float))
-        else:
-            root = self._root_position()
-            head = np.array([root[0], ROBOT_HEAD_HEIGHT, root[2]], dtype=float)
+        head = self._head_camera_position()
         forward = _forward_vector(np.radians(self._robot_yaw))
         offset = float(self.task_dict.get("eye_forward_offset", 0.12))
         eye = head + forward * offset
@@ -942,6 +977,37 @@ class BAOEnv:
                 target=target_isaac.tolist(),
                 camera_prim_path="/World/RobotEyeCamera",
             )
+
+    def _head_camera_position(self) -> np.ndarray:
+        """World position of the H1 head camera lens in the user frame."""
+        if self.head_visual_path:
+            try:
+                from pxr import Usd, UsdGeom
+
+                prim = self.stage.GetPrimAtPath(self.head_visual_path)
+                if prim and prim.IsValid():
+                    cache = UsdGeom.BBoxCache(
+                        Usd.TimeCode.Default(), [UsdGeom.Tokens.default_]
+                    )
+                    rng = cache.ComputeWorldBound(prim).ComputeAlignedRange()
+                    lo = rng.GetMin()
+                    hi = rng.GetMax()
+                    if all(
+                        math.isfinite(v)
+                        for v in (lo[0], lo[1], lo[2], hi[0], hi[1], hi[2])
+                    ):
+                        center = np.array(
+                            [(lo[i] + hi[i]) / 2.0 for i in range(3)],
+                            dtype=float,
+                        )
+                        return _isaac_to_user_pos(center)
+            except Exception:
+                pass
+        if self.head_xform is not None:
+            head_isaac = self.head_xform.get_world_poses()[0][0]
+            return _isaac_to_user_pos(np.asarray(head_isaac, dtype=float))
+        root = self._root_position()
+        return np.array([root[0], ROBOT_HEAD_HEIGHT, root[2]], dtype=float)
 
     # ------------------------------------------------------------------
     # Public environment interface
