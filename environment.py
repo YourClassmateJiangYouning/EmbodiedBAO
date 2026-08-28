@@ -292,9 +292,10 @@ class BAOEnv:
             ).MakeInvisible()
 
         for sign in (-1.0, 1.0):
+            edge_id = 0 if sign < 0 else 1
             FixedCuboid(
-                prim_path=f"/World/ChannelEdge_{int(sign)}",
-                name=f"channel_edge_{int(sign)}",
+                prim_path=f"/World/ChannelEdge_{edge_id}",
+                name=f"channel_edge_{edge_id}",
                 position=_user_to_isaac_pos(
                     np.array([WALL_X, WALL_HEIGHT / 2.0, sign * CHANNEL_HALF_WIDTH])
                 ),
@@ -304,8 +305,8 @@ class BAOEnv:
                 ),
             )
             self._create_and_bind_material(
-                f"/World/ChannelEdge_{int(sign)}",
-                f"/World/Looks/ChannelEdgeMaterial_{int(sign)}",
+                f"/World/ChannelEdge_{edge_id}",
+                f"/World/Looks/ChannelEdgeMaterial_{edge_id}",
                 color=[0.75, 0.78, 0.82],
                 metallic=0.0,
                 roughness=0.4,
