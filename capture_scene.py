@@ -47,8 +47,18 @@ def main() -> int:
                     f"{link_name}_world_bbox:",
                     bbox_cache.ComputeWorldBound(prim).ComputeAlignedRange(),
                 )
+        cam_prim = env.world.stage.GetPrimAtPath("/World/Camera")
+        print(
+            "camera_matrix:",
+            UsdGeom.Xformable(cam_prim).ComputeLocalToWorldTransform(
+                Usd.TimeCode.Default()
+            ),
+        )
         Image.fromarray(rgb).save(args.output)
-        print(f"saved: {os.path.abspath(args.output)} brightness={float(rgb.mean()):.1f}")
+        print(
+            f"saved: {os.path.abspath(args.output)} "
+            f"brightness={float(rgb.mean()):.1f} std={float(rgb.std()):.1f}"
+        )
 
         views = {
             "scene_third.png": ([0.5, -6.0, 3.5], [2.0, 0.0, 1.2], [0.0, 0.0, 1.0]),
@@ -74,8 +84,15 @@ def main() -> int:
                 view_rgb = env.camera.get_rgb()
                 Image.fromarray(view_rgb).save(name)
                 print(
+                    "camera_matrix:",
+                    UsdGeom.Xformable(cam_prim).ComputeLocalToWorldTransform(
+                        Usd.TimeCode.Default()
+                    ),
+                )
+                print(
                     f"saved: {os.path.abspath(name)} "
-                    f"brightness={float(view_rgb.mean()):.1f}"
+                    f"brightness={float(view_rgb.mean()):.1f} "
+                    f"std={float(view_rgb.std()):.1f}"
                 )
             except Exception as exc:
                 print(f"failed to save {name}: {exc}")

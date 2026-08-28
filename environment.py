@@ -75,7 +75,7 @@ ROBOT_BODY_CENTER_Y = 0.9
 ROBOT_BODY_HALF_HEIGHT = 0.9
 ROBOT_HEAD_HEIGHT = 1.55
 ARM_REACH = 0.34
-MODEL_YAW_OFFSET_DEG = 180.0
+MODEL_YAW_OFFSET_DEG = 0.0
 
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
 HAND_LOCAL_REST = np.array([0.10, 0.95, 0.24], dtype=float)
@@ -724,7 +724,7 @@ class BAOEnv:
         # Place the camera above the head and look down slightly toward the
         # ball, so the view is not occluded by the H1 head mesh.
         forward_offset = float(self.task_dict.get("camera_forward_offset", 0.1))
-        camera_height = float(self.task_dict.get("camera_height", 1.9))
+        camera_height = float(self.task_dict.get("camera_height", 3.0))
         eye = np.array([pos[0], camera_height, pos[2]]) + forward * forward_offset
         target = eye + forward * 4.0
         target[1] = 1.2  # look toward the green ball height
