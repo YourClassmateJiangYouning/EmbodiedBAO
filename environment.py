@@ -75,6 +75,7 @@ ROBOT_BODY_CENTER_Y = 0.9
 ROBOT_BODY_HALF_HEIGHT = 0.9
 ROBOT_HEAD_HEIGHT = 1.55
 ARM_REACH = 0.34
+MODEL_YAW_OFFSET_DEG = 180.0
 
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
 HAND_LOCAL_REST = np.array([0.10, 0.95, 0.24], dtype=float)
@@ -532,6 +533,11 @@ class BAOEnv:
                         sub_prim.RemoveAPI(api)
                 except Exception:
                     pass
+            if sub_prim.IsA(UsdPhysics.Joint):
+                try:
+                    sub_prim.SetActive(False)
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Materials
@@ -605,7 +611,8 @@ class BAOEnv:
             return
         pos = np.asarray(position, dtype=float).copy()
         pos[1] += float(self.task_dict.get("robot_root_y_offset", 0.0))
-        quat = self._yaw_quat(yaw_deg)
+        yaw_offset = float(self.task_dict.get("robot_yaw_offset", MODEL_YAW_OFFSET_DEG))
+        quat = self._yaw_quat(yaw_deg + yaw_offset)
         pos_isaac = _user_to_isaac_pos(pos)
         pos_isaac[2] += self._robot_ground_offset
         self.robot_root.set_world_poses(
@@ -708,15 +715,19 @@ class BAOEnv:
     def _analytic_hand_position(self) -> np.ndarray:
         root = self._root_position()
         local = HAND_LOCAL_REACH if self.reaching else HAND_LOCAL_REST
-        return root + _rotate_xz(local, np.radians(self._robot_yaw))
+        yaw_offset = float(self.task_dict.get("robot_yaw_offset", MODEL_YAW_OFFSET_DEG))
+        return root + _rotate_xz(local, np.radians(self._robot_yaw + yaw_offset))
 
     def _update_camera(self) -> None:
         pos = self._root_position()
         forward = _forward_vector(np.radians(self._robot_yaw))
-        # Offset forward so the camera is not inside the H1 head mesh.
-        forward_offset = float(self.task_dict.get("camera_forward_offset", 0.35))
-        eye = np.array([pos[0], ROBOT_HEAD_HEIGHT, pos[2]]) + forward * forward_offset
-        target = eye + forward * 5.0
+        # Place the camera above the head and look down slightly toward the
+        # ball, so the view is not occluded by the H1 head mesh.
+        forward_offset = float(self.task_dict.get("camera_forward_offset", 0.1))
+        camera_height = float(self.task_dict.get("camera_height", 1.9))
+        eye = np.array([pos[0], camera_height, pos[2]]) + forward * forward_offset
+        target = eye + forward * 4.0
+        target[1] = 1.2  # look toward the green ball height
         eye_isaac = _user_to_isaac_pos(eye)
         target_isaac = _user_to_isaac_pos(target)
         try:
