@@ -221,7 +221,7 @@ class BAOEnv:
         settings = carb.settings.get_settings()
         settings.set(
             "/rtx/rendermode",
-            str(self.task_dict.get("rendermode", "PathTracing")),
+            str(self.task_dict.get("rendermode", "RaytracedLighting")),
         )
         settings.set("/rtx/pathtracing/spp", int(self.task_dict.get("spp", 16)))
 
@@ -707,15 +707,70 @@ class BAOEnv:
                 self._reach_joint_indices = self._find_reach_joint_indices()
             self._articulation_ok = self._reach_joint_indices is not None
         except Exception as exc:
-            self._articulation_error = str(exc)
+            available = []
+            if self._articulation is not None:
+                available = [
+                    n for n in dir(self._articulation) if not n.startswith("_")
+                ][:60]
+            self._articulation_error = f"{exc} | available={available}"
             print(f"[BAOEnv] Articulation init failed, using kinematic hand fallback: {exc}")
             self._articulation = None
             self._articulation_ok = False
             self._reach_joint_indices = None
         return self._articulation_ok
 
+    def _articulation_dof_names(self) -> List[str]:
+        art = self._articulation
+        for name in ("get_dof_names", "get_joint_names"):
+            fn = getattr(art, name, None)
+            if callable(fn):
+                return [str(n) for n in fn()]
+        for name in ("dof_names", "joint_names"):
+            val = getattr(art, name, None)
+            if val is not None:
+                return [str(n) for n in val]
+        raise AttributeError("no dof-names accessor on articulation")
+
+    def _articulation_set_targets(
+        self, positions: np.ndarray, joint_indices: np.ndarray
+    ) -> None:
+        art = self._articulation
+        pos = np.asarray(positions, dtype=float)
+        idx = np.asarray(joint_indices, dtype=int)
+        for name in (
+            "set_joint_targets",
+            "set_dof_targets",
+            "set_joint_positions_targets",
+            "set_dof_positions_targets",
+        ):
+            fn = getattr(art, name, None)
+            if not callable(fn):
+                continue
+            try:
+                fn(positions=pos, joint_indices=idx)
+                return
+            except TypeError:
+                try:
+                    fn(pos, idx)
+                    return
+                except TypeError:
+                    continue
+        raise AttributeError("no joint-target setter on articulation")
+
+    def _articulation_joint_positions(self) -> np.ndarray:
+        art = self._articulation
+        for name in ("get_joint_positions", "get_dof_positions"):
+            fn = getattr(art, name, None)
+            if callable(fn):
+                return np.asarray(fn(), dtype=float).reshape(-1)
+        for name in ("joint_positions", "dof_positions"):
+            val = getattr(art, name, None)
+            if val is not None:
+                return np.asarray(val, dtype=float).reshape(-1)
+        return np.zeros(0)
+
     def _find_reach_joint_indices(self) -> Optional[np.ndarray]:
-        names = [str(n) for n in self._articulation.get_dof_names()]
+        names = self._articulation_dof_names()
 
         def pick(keyword_groups: List[List[str]]) -> Optional[int]:
             for keywords in keyword_groups:
@@ -737,8 +792,8 @@ class BAOEnv:
                 targets = np.array([REACH_SHOULDER_PITCH_RAD, REACH_ELBOW_PITCH_RAD])
             else:
                 targets = np.zeros(len(self._reach_joint_indices))
-            self._articulation.set_joint_targets(
-                positions=targets, joint_indices=self._reach_joint_indices
+            self._articulation_set_targets(
+                targets, self._reach_joint_indices
             )
         self.reaching = reaching
 
@@ -747,7 +802,7 @@ class BAOEnv:
         if not self._articulation_ok or self._articulation is None:
             return
         try:
-            names = [str(n) for n in self._articulation.get_dof_names()]
+            names = self._articulation_dof_names()
             indices: List[int] = []
             positions: List[float] = []
             hang_shoulder = float(
@@ -770,9 +825,9 @@ class BAOEnv:
                     indices.append(i)
                     positions.append(hang_elbow)
             if indices:
-                self._articulation.set_joint_targets(
-                    positions=np.asarray(positions, dtype=float),
-                    joint_indices=np.array(indices, dtype=int),
+                self._articulation_set_targets(
+                    np.asarray(positions, dtype=float),
+                    np.array(indices, dtype=int),
                 )
         except Exception as exc:
             print(f"[BAOEnv] standing joint init skipped: {exc}")
@@ -788,7 +843,7 @@ class BAOEnv:
         forward = _forward_vector(np.radians(self._robot_yaw))
         # Keep the observation camera at head height and always look at the
         # green ball so it stays centered in the frame.
-        forward_offset = float(self.task_dict.get("camera_forward_offset", 0.1))
+        forward_offset = float(self.task_dict.get("camera_forward_offset", 0.42))
         camera_height = float(self.task_dict.get("camera_height", 1.1))
         eye = np.array([pos[0], camera_height, pos[2]]) + forward * forward_offset
         target = np.asarray(TARGET_POS, dtype=float).copy()
@@ -842,8 +897,8 @@ class BAOEnv:
         joints: Dict[str, float] = {}
         if self._articulation_ok and self._articulation is not None:
             try:
-                names = [str(n) for n in self._articulation.get_dof_names()]
-                values = np.asarray(self._articulation.get_joint_positions()).reshape(-1)
+                names = self._articulation_dof_names()
+                values = self._articulation_joint_positions()
                 joints = {name: float(v) for name, v in zip(names, values)}
             except Exception:
                 joints = {}
