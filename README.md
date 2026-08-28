@@ -59,12 +59,32 @@ BAO task?
   `find ~ -iname "h1*.usd*" 2>/dev/null`, then run
   `export EMBODIEDBAO_H1_USD=/full/path/to/h1.usd` before starting the
   experiment.
+- HuggingFace download (MirrorBench-style, keeps the git repo light):
+  1. Create a public HuggingFace dataset, for example
+     `YourUserName/EmbodiedBAOAssets`, and upload `h1.usd` into it.
+  2. Run:
+     `export EMBODIEDBAO_ASSETS_REPO=YourUserName/EmbodiedBAOAssets`
+     `python download.py`
+  3. The file lands at `assets/H1/h1.usd` and is found automatically.
 - If no H1 USD is available, download the official Unitree H1 URDF (for
   example from `github.com/unitreerobotics/unitree_ros`, file
   `robots/h1_description/urdf/h1_with_hand.urdf`) and convert it:
   `$ISAACSIM_ROOT/python.sh convert_h1_urdf.py /path/to/h1_with_hand.urdf
   /path/to/output/h1.usd`. Then point `EMBODIEDBAO_H1_USD` at the output
   file or place it at `assets/H1/h1.usd`.
+
+## H1 Robot Data
+
+To inspect the loaded H1 model (stage up axis, links, joints, joint axes,
+limits, drive settings, bounding box), run:
+
+```text
+$ISAACSIM_ROOT/python.sh inspect_h1.py /path/to/h1.usd --json h1_info.json
+```
+
+The output is a JSON report that can be used to verify the robot's actual
+kinematics against the task assumptions (shoulder width, torso thickness,
+reachable joints).
 
 ## Usage
 
