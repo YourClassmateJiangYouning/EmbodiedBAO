@@ -36,6 +36,8 @@ def main() -> int:
         env = environment.setup_scene(simulation_app, task_dict=task_dict)
         rgb, _ = env.reset_scene()
         print("articulation_ok:", env._articulation_ok)
+        if getattr(env, "_articulation_error", ""):
+            print("articulation_error:", env._articulation_error)
         print("stage_up_axis:", env.world.stage.GetMetadata("upAxis"))
         print("robot_root_pose:", env.robot_root.get_world_poses())
         from pxr import Usd, UsdGeom

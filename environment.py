@@ -236,6 +236,7 @@ class BAOEnv:
 
         self._articulation: Any = None
         self._articulation_ok = False
+        self._articulation_error = ""
         self._reach_joint_indices: Optional[np.ndarray] = None
         self._robot_yaw = ROBOT_START_YAW_DEG
         self._robot_ground_offset = 0.0
@@ -576,7 +577,7 @@ class BAOEnv:
                 color=[0.72, 0.88, 0.92],
                 metallic=0.0,
                 roughness=0.02,
-                opacity=0.05,
+                opacity=0.08,
             )
             return
         prim = self.stage.GetPrimAtPath(prim_path)
@@ -680,6 +681,14 @@ class BAOEnv:
                         import_errors.append(
                             f"isaacsim.core.prims.SingleArticulation: {exc}"
                         )
+                    try:
+                        from isaacsim.core.prims import Articulation
+
+                        articulation_class = Articulation
+                    except Exception as exc:
+                        import_errors.append(
+                            f"isaacsim.core.prims.Articulation: {exc}"
+                        )
                 if articulation_class is None:
                     raise ImportError("; ".join(import_errors))
                 Articulation = articulation_class
@@ -698,6 +707,7 @@ class BAOEnv:
                 self._reach_joint_indices = self._find_reach_joint_indices()
             self._articulation_ok = self._reach_joint_indices is not None
         except Exception as exc:
+            self._articulation_error = str(exc)
             print(f"[BAOEnv] Articulation init failed, using kinematic hand fallback: {exc}")
             self._articulation = None
             self._articulation_ok = False
@@ -779,7 +789,7 @@ class BAOEnv:
         # Keep the observation camera at head height and always look at the
         # green ball so it stays centered in the frame.
         forward_offset = float(self.task_dict.get("camera_forward_offset", 0.1))
-        camera_height = float(self.task_dict.get("camera_height", 1.55))
+        camera_height = float(self.task_dict.get("camera_height", 1.1))
         eye = np.array([pos[0], camera_height, pos[2]]) + forward * forward_offset
         target = np.asarray(TARGET_POS, dtype=float).copy()
         eye_isaac = _user_to_isaac_pos(eye)
