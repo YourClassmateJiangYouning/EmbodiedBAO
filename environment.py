@@ -277,6 +277,9 @@ class BAOEnv:
                     np.array([WALL_THICKNESS, WALL_HEIGHT, PANEL_WIDTH])
                 ),
             )
+            UsdGeom.Gprim(
+                self.stage.GetPrimAtPath(f"/World/WallPanel_{i}")
+            ).CreateDoubleSidedAttr(True)
             self._create_and_bind_glass_material(
                 f"/World/WallPanel_{i}", f"/World/Looks/GlassMaterial_{i}"
             )
@@ -327,8 +330,8 @@ class BAOEnv:
         usd_path = self._resolve_robot_usd_path()
         add_reference_to_stage(usd_path=usd_path, prim_path=self.robot_prim_path)
         self.robot_usd_path = usd_path
-        if not self.task_dict.get("robot_physics", True):
-            self._disable_robot_collisions()
+        if not self.task_dict.get("robot_physics", False):
+            self._disable_robot_physics()
         self.robot_root = XFormPrim(prim_paths_expr=self.robot_prim_path)
         self._robot_ground_offset = self._compute_robot_ground_offset()
         self._set_robot_pose(ROBOT_START_POS, ROBOT_START_YAW_DEG)
@@ -505,6 +508,31 @@ class BAOEnv:
             if sub_prim.HasAPI(PhysxSchema.PhysxCollisionAPI):
                 sub_prim.RemoveAPI(PhysxSchema.PhysxCollisionAPI)
 
+    def _disable_robot_physics(self) -> None:
+        """Freeze the robot in its authored pose.
+
+        The robot stays movable kinematically and wall contact is still
+        detected by the analytic collision gate, but the physics engine can
+        never knock the body over.
+        """
+        for sub_prim in self.stage.Traverse():
+            path = str(sub_prim.GetPath())
+            if not path.startswith(self.robot_prim_path):
+                continue
+            for api in (
+                UsdPhysics.RigidBodyAPI,
+                UsdPhysics.CollisionAPI,
+                PhysxSchema.PhysxRigidBodyAPI,
+                PhysxSchema.PhysxCollisionAPI,
+                PhysxSchema.PhysxArticulationAPI,
+                UsdPhysics.ArticulationRootAPI,
+            ):
+                try:
+                    if sub_prim.HasAPI(api):
+                        sub_prim.RemoveAPI(api)
+                except Exception:
+                    pass
+
     # ------------------------------------------------------------------
     # Materials
     # ------------------------------------------------------------------
@@ -519,7 +547,7 @@ class BAOEnv:
                 color=[0.72, 0.88, 0.92],
                 metallic=0.0,
                 roughness=0.02,
-                opacity=0.20,
+                opacity=0.05,
             )
             return
         prim = self.stage.GetPrimAtPath(prim_path)
@@ -593,7 +621,7 @@ class BAOEnv:
         return _isaac_to_user_pos(np.asarray(pos, dtype=float))
 
     def _init_robot_controller(self) -> bool:
-        if not self.task_dict.get("robot_physics", True):
+        if not self.task_dict.get("robot_physics", False):
             self._articulation_ok = False
             return False
         try:
