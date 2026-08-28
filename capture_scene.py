@@ -36,6 +36,18 @@ def main() -> int:
         task_dict["headless"] = args.headless
         env = environment.setup_scene(simulation_app, task_dict=task_dict)
         rgb, _ = env.reset_scene()
+        print("stage_up_axis:", env.world.stage.GetMetadata("upAxis"))
+        print("robot_root_pose:", env.robot_root.get_world_poses())
+        from pxr import Usd, UsdGeom
+
+        bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_])
+        for link_name in ("torso_link", "right_ankle_link"):
+            prim = env.world.stage.GetPrimAtPath(f"/World/H1/{link_name}")
+            if prim and prim.IsValid():
+                print(
+                    f"{link_name}_world_bbox:",
+                    bbox_cache.ComputeWorldBound(prim).ComputeAlignedRange(),
+                )
         Image.fromarray(rgb).save(args.output)
         print(f"saved: {os.path.abspath(args.output)} brightness={float(rgb.mean()):.1f}")
 
