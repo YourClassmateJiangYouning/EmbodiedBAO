@@ -602,9 +602,9 @@ class BAOEnv:
 
     @staticmethod
     def _yaw_quat(yaw_deg: float) -> np.ndarray:
-        """Quaternion (x, y, z, w) for yaw around Isaac Sim's +z (up)."""
+        """Quaternion (w, x, y, z) for yaw around Isaac Sim's +z (up)."""
         half = float(np.radians(yaw_deg)) / 2.0
-        return np.array([0.0, 0.0, np.sin(half), np.cos(half)])
+        return np.array([np.cos(half), 0.0, 0.0, np.sin(half)])
 
     def _set_robot_pose(self, position: np.ndarray, yaw_deg: float) -> None:
         if self.robot_root is None:
