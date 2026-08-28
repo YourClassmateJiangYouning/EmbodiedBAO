@@ -233,6 +233,9 @@ class BAOEnv:
         self.robot_root: Optional[XFormPrim] = None
         self.hand_xform: Optional[XFormPrim] = None
         self.hand_prim_path: Optional[str] = None
+        self.head_xform: Optional[XFormPrim] = None
+        self.head_prim_path: Optional[str] = None
+        self.eye_camera: Optional[Camera] = None
 
         self._articulation: Any = None
         self._articulation_ok = False
@@ -246,9 +249,11 @@ class BAOEnv:
         self._create_wall()
         self._create_target()
         self._create_lights()
-        self._load_robot()
         self._create_camera()
+        self._load_robot()
+        self._create_eye_camera()
         self._update_camera()
+        self._update_eye_camera()
 
     # ------------------------------------------------------------------
     # Scene construction
@@ -342,6 +347,21 @@ class BAOEnv:
         )
         self.camera.set_focal_length(float(self.task_dict.get("camera_focal", 2.5)))
 
+    def _create_eye_camera(self) -> None:
+        """Robot eye camera mounted at the H1 head d435 module."""
+        resolution = tuple(
+            int(v) for v in self.task_dict.get("camera_resolution", (1024, 1024))
+        )
+        self.eye_camera = Camera(
+            prim_path="/World/RobotEyeCamera",
+            translation=_user_to_isaac_pos(
+                np.array([ROBOT_START_POS[0], ROBOT_HEAD_HEIGHT, ROBOT_START_POS[2]])
+            ),
+            frequency=20,
+            resolution=resolution,
+        )
+        self.eye_camera.set_focal_length(float(self.task_dict.get("camera_focal", 2.5)))
+
     def _create_lights(self) -> None:
         """Add scene lights; without them the camera images are black."""
         distant = UsdLux.DistantLight.Define(self.stage, "/World/DistantLight")
@@ -361,6 +381,7 @@ class BAOEnv:
         self._robot_ground_offset = self._compute_robot_ground_offset()
         self._set_robot_pose(ROBOT_START_POS, ROBOT_START_YAW_DEG)
         self._find_hand_prim()
+        self._find_head_camera_link()
 
     def _compute_robot_ground_offset(self) -> float:
         """Raise the robot so its lowest mesh point sits on the ground (z=0)."""
@@ -521,6 +542,28 @@ class BAOEnv:
         except Exception as exc:  # pragma: no cover - runtime Isaac Sim path
             print(f"[BAOEnv] Could not wrap hand prim {self.hand_prim_path}: {exc}")
             self.hand_xform = None
+
+    def _find_head_camera_link(self) -> None:
+        """Locate the H1 head camera module mounting link (d435)."""
+        scored: List[Tuple[int, str]] = []
+        for prim in self.stage.Traverse():
+            path = str(prim.GetPath())
+            if not path.startswith(self.robot_prim_path):
+                continue
+            name = prim.GetName().lower()
+            if "d435" in name and "rgb" in name:
+                scored.append((2, path))
+            elif "d435" in name and "imager" in name:
+                scored.append((1, path))
+        if not scored:
+            return
+        scored.sort(key=lambda item: -item[0])
+        self.head_prim_path = scored[0][1]
+        try:
+            self.head_xform = XFormPrim(prim_paths_expr=self.head_prim_path)
+        except Exception as exc:
+            print(f"[BAOEnv] Could not wrap head camera link {self.head_prim_path}: {exc}")
+            self.head_xform = None
 
     def _disable_robot_collisions(self) -> None:
         """Kinematic mode: keep the articulated body but drop its colliders."""
@@ -830,7 +873,14 @@ class BAOEnv:
                     np.array(indices, dtype=int),
                 )
         except Exception as exc:
-            print(f"[BAOEnv] standing joint init skipped: {exc}")
+            available = (
+                [n for n in dir(self._articulation) if not n.startswith("_")][:60]
+                if self._articulation is not None
+                else []
+            )
+            print(
+                f"[BAOEnv] standing joint init skipped: {exc} | available={available}"
+            )
 
     def _analytic_hand_position(self) -> np.ndarray:
         root = self._root_position()
@@ -863,6 +913,36 @@ class BAOEnv:
                 camera_prim_path="/World/Camera",
             )
 
+    def _update_eye_camera(self) -> None:
+        """Aim the robot eye camera from the H1 head d435 mounting point."""
+        if self.eye_camera is None:
+            return
+        if self.head_xform is not None:
+            head_isaac = self.head_xform.get_world_poses()[0][0]
+            head = _isaac_to_user_pos(np.asarray(head_isaac, dtype=float))
+        else:
+            root = self._root_position()
+            head = np.array([root[0], ROBOT_HEAD_HEIGHT, root[2]], dtype=float)
+        forward = _forward_vector(np.radians(self._robot_yaw))
+        offset = float(self.task_dict.get("eye_forward_offset", 0.12))
+        eye = head + forward * offset
+        target = np.asarray(TARGET_POS, dtype=float).copy()
+        eye_isaac = _user_to_isaac_pos(eye)
+        target_isaac = _user_to_isaac_pos(target)
+        try:
+            set_camera_view(
+                eye=eye_isaac.tolist(),
+                target=target_isaac.tolist(),
+                up=[0.0, 0.0, 1.0],
+                camera_prim_path="/World/RobotEyeCamera",
+            )
+        except TypeError:
+            set_camera_view(
+                eye=eye_isaac.tolist(),
+                target=target_isaac.tolist(),
+                camera_prim_path="/World/RobotEyeCamera",
+            )
+
     # ------------------------------------------------------------------
     # Public environment interface
     # ------------------------------------------------------------------
@@ -871,6 +951,8 @@ class BAOEnv:
         """Reset the robot and target, then return (rgb, distance)."""
         self.world.reset()
         self.camera.initialize()
+        if self.eye_camera is not None:
+            self.eye_camera.initialize()
         self._init_robot_controller()
         self._set_robot_pose(ROBOT_START_POS, ROBOT_START_YAW_DEG)
         self._set_standing_joint_targets()
@@ -881,15 +963,23 @@ class BAOEnv:
             except Exception:
                 pass
         self._update_camera()
+        self._update_eye_camera()
         for _ in range(int(self.task_dict.get("reset_steps", 30))):
             self.world.step(render=True)
-        return self.camera.get_rgb(), self.get_distance_to_target()
+        rgb = (
+            self.eye_camera.get_rgb()
+            if self.eye_camera is not None
+            else self.camera.get_rgb()
+        )
+        return rgb, self.get_distance_to_target()
 
     def reset(self) -> Tuple[np.ndarray, float]:
         """Alias for reset_scene (MirrorBench compatibility)."""
         return self.reset_scene()
 
     def get_camera_image(self) -> np.ndarray:
+        if self.eye_camera is not None:
+            return self.eye_camera.get_rgb()
         return self.camera.get_rgb()
 
     def get_robot_state(self) -> Dict[str, Any]:
@@ -956,6 +1046,7 @@ class BAOEnv:
 
         legal, feedback, collision = self._apply_action(action)
         self._update_camera()
+        self._update_eye_camera()
         for _ in range(int(n_steps)):
             self.world.step(render=True)
 

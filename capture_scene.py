@@ -57,6 +57,14 @@ def main() -> int:
                 Usd.TimeCode.Default()
             ),
         )
+        eye_prim = env.world.stage.GetPrimAtPath("/World/RobotEyeCamera")
+        if eye_prim and eye_prim.IsValid():
+            print(
+                "eye_camera_matrix:",
+                UsdGeom.Xformable(eye_prim).ComputeLocalToWorldTransform(
+                    Usd.TimeCode.Default()
+                ),
+            )
         Image.fromarray(rgb).save(args.output)
         print(
             f"saved: {os.path.abspath(args.output)} "
