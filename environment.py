@@ -76,6 +76,8 @@ ROBOT_BODY_HALF_HEIGHT = 0.9
 ROBOT_HEAD_HEIGHT = 1.55
 ARM_REACH = 0.34
 MODEL_YAW_OFFSET_DEG = 0.0
+ARM_HANG_SHOULDER_PITCH_RAD = -1.57
+ARM_HANG_ELBOW_PITCH_RAD = 0.0
 
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
 HAND_LOCAL_REST = np.array([0.10, 0.95, 0.24], dtype=float)
@@ -283,6 +285,30 @@ class BAOEnv:
             ).CreateDoubleSidedAttr(True)
             self._create_and_bind_glass_material(
                 f"/World/WallPanel_{i}", f"/World/Looks/GlassMaterial_{i}"
+            )
+            # The glass is visually transparent; keep only the collision gate.
+            UsdGeom.Imageable(
+                self.stage.GetPrimAtPath(f"/World/WallPanel_{i}")
+            ).MakeInvisible()
+
+        for sign in (-1.0, 1.0):
+            FixedCuboid(
+                prim_path=f"/World/ChannelEdge_{int(sign)}",
+                name=f"channel_edge_{int(sign)}",
+                position=_user_to_isaac_pos(
+                    np.array([WALL_X, WALL_HEIGHT / 2.0, sign * CHANNEL_HALF_WIDTH])
+                ),
+                size=1.0,
+                scale=_user_to_isaac_scale(
+                    np.array([0.01, 0.01, WALL_HEIGHT])
+                ),
+            )
+            self._create_and_bind_material(
+                f"/World/ChannelEdge_{int(sign)}",
+                f"/World/Looks/ChannelEdgeMaterial_{int(sign)}",
+                color=[0.75, 0.78, 0.82],
+                metallic=0.0,
+                roughness=0.4,
             )
 
     def _create_target(self) -> None:
@@ -649,10 +675,26 @@ class BAOEnv:
                     except Exception as exc:
                         import_errors.append(f"{module_name}: {exc}")
                 if articulation_class is None:
+                    try:
+                        from isaacsim.core.prims import SingleArticulation
+
+                        articulation_class = SingleArticulation
+                    except Exception as exc:
+                        import_errors.append(
+                            f"isaacsim.core.prims.SingleArticulation: {exc}"
+                        )
+                if articulation_class is None:
                     raise ImportError("; ".join(import_errors))
                 Articulation = articulation_class
 
-                self._articulation = Articulation(prim_paths_expr=self.robot_prim_path)
+                try:
+                    self._articulation = Articulation(
+                        prim_path=self.robot_prim_path
+                    )
+                except TypeError:
+                    self._articulation = Articulation(
+                        prim_paths_expr=self.robot_prim_path
+                    )
                 self._articulation.initialize()
             self._articulation.post_reset()
             if self._reach_joint_indices is None:
@@ -694,19 +736,35 @@ class BAOEnv:
         self.reaching = reaching
 
     def _set_standing_joint_targets(self) -> None:
-        """Zero hip/knee joints so the robot keeps an upright standing pose."""
+        """Pose the robot: upright hips/knees and arms hanging down."""
         if not self._articulation_ok or self._articulation is None:
             return
         try:
             names = [str(n) for n in self._articulation.get_dof_names()]
-            indices = [
-                i
-                for i, name in enumerate(names)
-                if any(key in name.lower() for key in ("hip", "knee"))
-            ]
+            indices: List[int] = []
+            positions: List[float] = []
+            hang_shoulder = float(
+                self.task_dict.get(
+                    "arm_hang_shoulder_pitch_rad", ARM_HANG_SHOULDER_PITCH_RAD
+                )
+            )
+            hang_elbow = float(
+                self.task_dict.get("arm_hang_elbow_pitch_rad", ARM_HANG_ELBOW_PITCH_RAD)
+            )
+            for i, name in enumerate(names):
+                lower = name.lower()
+                if any(key in lower for key in ("hip", "knee")):
+                    indices.append(i)
+                    positions.append(0.0)
+                elif "shoulder_pitch" in lower:
+                    indices.append(i)
+                    positions.append(hang_shoulder)
+                elif "elbow" in lower:
+                    indices.append(i)
+                    positions.append(hang_elbow)
             if indices:
                 self._articulation.set_joint_targets(
-                    positions=np.zeros(len(indices)),
+                    positions=np.asarray(positions, dtype=float),
                     joint_indices=np.array(indices, dtype=int),
                 )
         except Exception as exc:
@@ -724,7 +782,7 @@ class BAOEnv:
         # Place the camera above the head and look down slightly toward the
         # ball, so the view is not occluded by the H1 head mesh.
         forward_offset = float(self.task_dict.get("camera_forward_offset", 0.1))
-        camera_height = float(self.task_dict.get("camera_height", 3.0))
+        camera_height = float(self.task_dict.get("camera_height", 1.9))
         eye = np.array([pos[0], camera_height, pos[2]]) + forward * forward_offset
         target = eye + forward * 4.0
         target[1] = 1.2  # look toward the green ball height
