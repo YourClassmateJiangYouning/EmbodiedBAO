@@ -217,6 +217,8 @@ class BAOEnv:
             )
         self.sim_app = sim_app
         self.task_dict = task_dict or {}
+        if os.environ.get("EMBODIEDBAO_HIDE_ROBOT", "0") == "1":
+            self.task_dict["hide_robot"] = True
 
         settings = carb.settings.get_settings()
         settings.set(
