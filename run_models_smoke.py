@@ -61,10 +61,6 @@ def _write_progress(message: str) -> None:
 
 
 def _run_models(args: argparse.Namespace) -> int:
-    import environment
-    from experiments import BAOExperimentRunner
-    from main import save_episodes_csv
-
     models = list(args.models) if args.models else DEFAULT_MODELS
     task_dict = json.loads(args.env_config)
     task_dict["headless"] = args.headless
@@ -73,6 +69,10 @@ def _run_models(args: argparse.Namespace) -> int:
     simulation_app = SimulationApp({"headless": args.headless})
     env = None
     try:
+        import environment
+        from experiments import BAOExperimentRunner
+        from main import save_episodes_csv
+
         env = environment.setup_scene(simulation_app, task_dict=task_dict)
         _write_progress(
             f"model smoke start: level={args.level} models={models} "
