@@ -327,6 +327,11 @@ class AgentAPI:
                 "No API key found. Set BOYUE_API_KEY, TAOTOKEN_API_KEY, or "
                 "OPENAI_API_KEY in the environment."
             )
+        if not self.api_key.isascii():
+            raise ValueError(
+                "API key contains non-ASCII characters. Replace the placeholder "
+                "'sk-your-real-token' with the actual key and export it again."
+            )
         env_base_url = (
             os.environ.get("BOYUE_BASE_URL")
             or os.environ.get("TAOTOKEN_BASE_URL")
