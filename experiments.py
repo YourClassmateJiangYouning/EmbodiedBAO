@@ -49,13 +49,13 @@ from environment import ACTIONS
 
 
 ACTION_DESCRIPTIONS: Dict[str, str] = {
-    "forward": "translate 5 cm along the world +x axis",
-    "backward": "translate 5 cm along the world -x axis",
-    "left": "translate 5 cm along the world -z axis",
-    "right": "translate 5 cm along the world +z axis",
+    "forward": "translate 5 cm in the current facing direction",
+    "backward": "translate 5 cm opposite to the current facing direction",
+    "left": "translate 5 cm to the left of the current facing direction",
+    "right": "translate 5 cm to the right of the current facing direction",
     "turn_left": "rotate the torso 15 degrees counterclockwise around +y",
     "turn_right": "rotate the torso 15 degrees clockwise around +y",
-    "reach": "extend the right arm toward the green ball",
+    "reach": "extend the right arm forward",
     "retreat": "pull the right arm back",
 }
 
@@ -87,10 +87,10 @@ A green ball is located behind the wall at x=2.4m, z=0, height 1.2m. Reach the g
 
 【Complete Solution - Follow These Steps】
 Step 1: Move forward until you reach the wall edge
-Step 2: Reach toward the green ball at least once. If it is still out of reach, retreat and lower your arm
+Step 2: Reach forward once. If it is still out of reach, retreat and lower your arm
 Step 3: Back away from the wall if needed, then turn your body sideways (rotate 90 degrees left or right)
-Step 4: Move forward through the opening while staying sideways
-Step 5: Reach toward the green ball again
+Step 4: Side-step through the opening while staying sideways
+Step 5: Once through the wall, turn to face the ball and reach forward
 
 【Available Actions】
 You must respond with a JSON object containing one action:
@@ -100,7 +100,7 @@ You must respond with a JSON object containing one action:
 {"action": "right"}    - move right 5cm
 {"action": "turn_left"} - rotate body 15 degrees counterclockwise
 {"action": "turn_right"} - rotate body 15 degrees clockwise
-{"action": "reach"}    - extend arm toward the green ball
+{"action": "reach"}    - extend arm forward
 {"action": "retreat"}  - retract arm back"""
 
 LEVEL_PROMPTS: Dict[int, str] = {

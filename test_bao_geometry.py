@@ -60,27 +60,29 @@ class CoordinateRegressionTest(unittest.TestCase):
             env._set_robot_pose(root + np.array([MOVE_STEP, 0.0, 0.0]), env._robot_yaw)
         np.testing.assert_allclose(ys, np.zeros(10), atol=1e-9)
 
-    def test_translations_use_fixed_world_axes(self) -> None:
+    def test_translations_follow_robot_facing(self) -> None:
         env = _make_env()
         env._set_robot_pose(ROBOT_START_POS, 90.0)
         self.assertAlmostEqual(float(env._robot_yaw), 90.0)
 
         env._apply_action("forward")
         pos = env._root_position()
-        self.assertAlmostEqual(pos[0], 1.55)
-        self.assertAlmostEqual(pos[2], 0.0)
+        self.assertAlmostEqual(pos[0], 1.50)
+        self.assertAlmostEqual(pos[2], -MOVE_STEP)
 
         env._apply_action("backward")
         pos = env._root_position()
         self.assertAlmostEqual(pos[0], 1.50)
+        self.assertAlmostEqual(pos[2], 0.0)
 
         env._apply_action("left")
         pos = env._root_position()
-        self.assertAlmostEqual(pos[2], -MOVE_STEP)
+        self.assertAlmostEqual(pos[0], ROBOT_START_POS[0] - MOVE_STEP)
+        self.assertAlmostEqual(pos[2], 0.0)
 
         env._apply_action("right")
         pos = env._root_position()
-        self.assertAlmostEqual(pos[2], 0.0)
+        self.assertAlmostEqual(pos[0], ROBOT_START_POS[0])
         self.assertAlmostEqual(env.get_torso_rotation(), 90.0)
 
     def test_collision_bool_and_position_api(self) -> None:
@@ -110,15 +112,21 @@ class CoordinateRegressionTest(unittest.TestCase):
             float(env._analytic_hand_position()[1]), HAND_LOCAL_REACH[1]
         )
 
-    def test_reach_targets_ball_independent_of_yaw(self) -> None:
+    def test_reach_follows_body_forward(self) -> None:
         env = _make_env()
-        env._set_robot_pose(np.array([1.96, 0.0, 0.0]), 90.0)
+        env._set_robot_pose(np.array([1.96, 0.0, 0.0]), 0.0)
         env.reaching = True
         hand = env.get_hand_position()
         self.assertAlmostEqual(float(hand[0]), 2.40)
         self.assertAlmostEqual(float(hand[1]), 1.20)
-        self.assertAlmostEqual(float(hand[2]), 0.0)
-        self.assertTrue(env.check_success())
+        self.assertAlmostEqual(float(hand[2]), 0.24)
+
+        env._set_robot_pose(np.array([1.96, 0.0, 0.0]), 90.0)
+        env.reaching = True
+        hand = env.get_hand_position()
+        self.assertAlmostEqual(float(hand[0]), 2.20)
+        self.assertAlmostEqual(float(hand[1]), 1.20)
+        self.assertAlmostEqual(float(hand[2]), -0.44)
 
 
 if __name__ == "__main__":

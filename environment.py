@@ -81,8 +81,7 @@ ARM_HANG_ELBOW_PITCH_RAD = 1.57
 
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
 HAND_LOCAL_REST = np.array([0.10, 0.95, 0.24], dtype=float)
-# Reach is defined toward the green ball along world +x, independent of yaw.
-HAND_LOCAL_REACH = np.array([0.44, 1.20, 0.00], dtype=float)
+HAND_LOCAL_REACH = np.array([0.44, 1.20, 0.24], dtype=float)  # +34 cm forward
 
 REACH_SHOULDER_PITCH_RAD = -1.35
 REACH_ELBOW_PITCH_RAD = 0.0
@@ -1004,10 +1003,9 @@ class BAOEnv:
     def _analytic_hand_position(self) -> np.ndarray:
         root = self._root_position()
         yaw_offset = float(self.task_dict.get("robot_yaw_offset", MODEL_YAW_OFFSET_DEG))
-        if self.reaching:
-            return root + HAND_LOCAL_REACH
+        local = HAND_LOCAL_REACH if self.reaching else HAND_LOCAL_REST
         return root + _rotate_xz(
-            HAND_LOCAL_REST, np.radians(self._robot_yaw + yaw_offset)
+            local, np.radians(self._robot_yaw + yaw_offset)
         )
 
     def _update_camera(self) -> None:
@@ -1138,8 +1136,6 @@ class BAOEnv:
         return float(self._robot_yaw)
 
     def get_hand_position(self) -> np.ndarray:
-        if self.reaching:
-            return self._analytic_hand_position()
         if self._articulation_ok and self.hand_xform is not None:
             try:
                 pos = self.hand_xform.get_world_poses()[0][0]
@@ -1233,18 +1229,17 @@ class BAOEnv:
 
     def _apply_action(self, action: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         root = self._root_position()
+        yaw = np.radians(self._robot_yaw)
 
         if action in ("forward", "backward", "left", "right"):
-            # World-fixed translations: forward/backward move x, left/right
-            # move z. They never depend on the robot's current yaw.
-            world_delta = {
-                "forward": np.array([MOVE_STEP, 0.0, 0.0], dtype=float),
-                "backward": np.array([-MOVE_STEP, 0.0, 0.0], dtype=float),
-                "left": np.array([0.0, 0.0, -MOVE_STEP], dtype=float),
-                "right": np.array([0.0, 0.0, MOVE_STEP], dtype=float),
-            }[action]
-            target = root + world_delta
-            yaw = np.radians(self._robot_yaw)
+            # Egocentric translations: forward/backward follow the robot's
+            # facing direction; left/right are relative to the robot.
+            sign = 1.0 if action in ("forward", "right") else -1.0
+            if action in ("forward", "backward"):
+                delta = _forward_vector(yaw) * (sign * MOVE_STEP)
+            else:
+                delta = _rotate_xz(np.array([0.0, 0.0, sign * MOVE_STEP]), yaw)
+            target = root + delta
             collision = _check_wall_collision(
                 target,
                 yaw,

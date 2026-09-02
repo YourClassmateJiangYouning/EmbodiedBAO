@@ -184,11 +184,9 @@ Outputs:
 - Robot: Unitree H1 loaded from Isaac Sim/Isaac Lab built-in assets or a
   local path. Root movement is kinematic; actions are gated by analytic
   collision checks that return the colliding part and contact point.
-- Actions: `forward/backward/left/right` are fixed world-axis translations
-  (+x/-x/-z/+z, 5cm), `turn_left/turn_right` rotate 15 degrees, and
-  `reach/retreat` extend/retract the arm. `reach` targets the green ball in
-  world +x regardless of torso yaw. Reach prefers articulation joint control
-  and uses the kinematic hand model for success/distance evaluation.
+- Actions are egocentric: `forward/backward/left/right` move relative to the
+  robot's current facing direction (5cm), `turn_left/turn_right` rotate 15
+  degrees, and `reach/retreat` extend/retract the arm forward/backward.
 - Main interface: `reset_scene()`, `get_camera_image()` (1024x1024 RGB),
   `get_robot_state()`, `get_hand_position()`, `get_distance_to_target()`,
   `get_torso_rotation()`, `check_success()` (< 3cm),
