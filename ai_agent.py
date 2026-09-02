@@ -25,6 +25,7 @@ import os
 import random
 import re
 import time
+import traceback
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -410,7 +411,10 @@ class AgentAPI:
                 self._log(f"MODEL RESPONSE (unparseable):\n{response}")
                 last_error = "response was not a valid JSON or action text"
             except Exception as exc:
-                last_error = f"{type(exc).__name__}: {exc}"
+                last_error = (
+                    f"{type(exc).__name__}: {exc}\n"
+                    + traceback.format_exc(limit=8)
+                )
                 self._log(f"REQUEST ERROR: {last_error}")
 
         self._log(f"FALLBACK (no valid response after {self.max_retries + 1} attempts)")
