@@ -19,10 +19,19 @@ from typing import Any, Dict, List, Optional
 
 from isaacsim import SimulationApp
 
-from ai_agent import SUPPORTED_MODELS
 
-
-DEFAULT_MODELS: List[str] = SUPPORTED_MODELS + ["random"]
+DEFAULT_MODELS: List[str] = [
+    "gpt-4o",
+    "gpt-4o-mini",
+    "claude-3.5-sonnet",
+    "gemini-2.5-pro",
+    "qwen-vl-max",
+    "qwen2.5-vl-72b",
+    "qwen2.5-vl-7b",
+    "internvl3.5-4b",
+    "llava-1.6-7b",
+    "random",
+]
 
 
 def parse_args() -> argparse.Namespace:
