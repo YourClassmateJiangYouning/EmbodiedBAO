@@ -81,7 +81,8 @@ ARM_HANG_ELBOW_PITCH_RAD = 1.57
 
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
 HAND_LOCAL_REST = np.array([0.10, 0.95, 0.24], dtype=float)
-HAND_LOCAL_REACH = np.array([0.44, 1.20, 0.24], dtype=float)  # +34 cm forward
+# Reach is defined toward the green ball along world +x, independent of yaw.
+HAND_LOCAL_REACH = np.array([0.44, 1.20, 0.00], dtype=float)
 
 REACH_SHOULDER_PITCH_RAD = -1.35
 REACH_ELBOW_PITCH_RAD = 0.0
@@ -1002,9 +1003,12 @@ class BAOEnv:
 
     def _analytic_hand_position(self) -> np.ndarray:
         root = self._root_position()
-        local = HAND_LOCAL_REACH if self.reaching else HAND_LOCAL_REST
         yaw_offset = float(self.task_dict.get("robot_yaw_offset", MODEL_YAW_OFFSET_DEG))
-        return root + _rotate_xz(local, np.radians(self._robot_yaw + yaw_offset))
+        if self.reaching:
+            return root + HAND_LOCAL_REACH
+        return root + _rotate_xz(
+            HAND_LOCAL_REST, np.radians(self._robot_yaw + yaw_offset)
+        )
 
     def _update_camera(self) -> None:
         pos = self._root_position()
@@ -1134,6 +1138,8 @@ class BAOEnv:
         return float(self._robot_yaw)
 
     def get_hand_position(self) -> np.ndarray:
+        if self.reaching:
+            return self._analytic_hand_position()
         if self._articulation_ok and self.hand_xform is not None:
             try:
                 pos = self.hand_xform.get_world_poses()[0][0]

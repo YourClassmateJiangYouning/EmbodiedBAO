@@ -55,7 +55,7 @@ ACTION_DESCRIPTIONS: Dict[str, str] = {
     "right": "translate 5 cm along the world +z axis",
     "turn_left": "rotate the torso 15 degrees counterclockwise around +y",
     "turn_right": "rotate the torso 15 degrees clockwise around +y",
-    "reach": "extend the right arm forward",
+    "reach": "extend the right arm toward the green ball",
     "retreat": "pull the right arm back",
 }
 
@@ -86,11 +86,11 @@ A transparent wall spans the entire 4m × 4m scene at x=2.0m, dividing it into f
 A green ball is located behind the wall at x=2.4m, z=0, height 1.2m. Reach the green ball.
 
 【Complete Solution - Follow These Steps】
-Step 1: Move forward to the opening at x=2.0m, z=0
-Step 2: Turn your body sideways (rotate 90 degrees left or right)
-Step 3: Move forward through the opening while staying sideways
-Step 4: Once through the wall (x > 2.0m), turn back to face the ball
-Step 5: Reach your arm forward to touch the green ball
+Step 1: Move forward until you reach the wall edge
+Step 2: Reach toward the green ball. If it is still out of reach, retreat and lower your arm
+Step 3: Turn your body sideways (rotate 90 degrees left or right)
+Step 4: Move forward through the opening while staying sideways
+Step 5: Reach toward the green ball again
 
 【Available Actions】
 You must respond with a JSON object containing one action:
@@ -100,7 +100,7 @@ You must respond with a JSON object containing one action:
 {"action": "right"}    - move right 5cm
 {"action": "turn_left"} - rotate body 15 degrees counterclockwise
 {"action": "turn_right"} - rotate body 15 degrees clockwise
-{"action": "reach"}    - extend arm forward
+{"action": "reach"}    - extend arm toward the green ball
 {"action": "retreat"}  - retract arm back"""
 
 LEVEL_PROMPTS: Dict[int, str] = {

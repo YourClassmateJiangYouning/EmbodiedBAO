@@ -186,8 +186,9 @@ Outputs:
   collision checks that return the colliding part and contact point.
 - Actions: `forward/backward/left/right` are fixed world-axis translations
   (+x/-x/-z/+z, 5cm), `turn_left/turn_right` rotate 15 degrees, and
-  `reach/retreat` extend/retract the arm. Reach prefers articulation joint
-  control and falls back to a kinematic hand model.
+  `reach/retreat` extend/retract the arm. `reach` targets the green ball in
+  world +x regardless of torso yaw. Reach prefers articulation joint control
+  and uses the kinematic hand model for success/distance evaluation.
 - Main interface: `reset_scene()`, `get_camera_image()` (1024x1024 RGB),
   `get_robot_state()`, `get_hand_position()`, `get_distance_to_target()`,
   `get_torso_rotation()`, `check_success()` (< 3cm),

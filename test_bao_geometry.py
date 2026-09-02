@@ -110,6 +110,16 @@ class CoordinateRegressionTest(unittest.TestCase):
             float(env._analytic_hand_position()[1]), HAND_LOCAL_REACH[1]
         )
 
+    def test_reach_targets_ball_independent_of_yaw(self) -> None:
+        env = _make_env()
+        env._set_robot_pose(np.array([1.96, 0.0, 0.0]), 90.0)
+        env.reaching = True
+        hand = env.get_hand_position()
+        self.assertAlmostEqual(float(hand[0]), 2.40)
+        self.assertAlmostEqual(float(hand[1]), 1.20)
+        self.assertAlmostEqual(float(hand[2]), 0.0)
+        self.assertTrue(env.check_success())
+
 
 if __name__ == "__main__":
     unittest.main()
