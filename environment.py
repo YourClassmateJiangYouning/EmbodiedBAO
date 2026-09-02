@@ -111,7 +111,11 @@ def _rotate_xz(vec: np.ndarray, yaw_rad: float) -> np.ndarray:
 
 
 def _forward_vector(yaw_rad: float) -> np.ndarray:
-    """Unit vector pointing in the robot's facing direction."""
+    """Unit vector pointing in the robot's facing direction.
+
+    This is only used for camera placement and analytic arm orientation.
+    Translation actions use fixed world x/z axes as required by the protocol.
+    """
     return np.array([np.cos(yaw_rad), 0.0, -np.sin(yaw_rad)], dtype=float)
 
 
@@ -1063,6 +1067,7 @@ class BAOEnv:
 
     def get_robot_state(self) -> Dict[str, Any]:
         pos = self._root_position()
+        hand = self.get_hand_position()
         joints: Dict[str, float] = {}
         if self._articulation_ok and self._articulation is not None:
             try:
@@ -1075,9 +1080,15 @@ class BAOEnv:
             "position": pos.tolist(),
             "orientation": {"roll": 0.0, "pitch": 0.0, "yaw": self._robot_yaw},
             "joint_angles": joints,
-            "end_effector_position": self.get_hand_position().tolist(),
+            "end_effector_position": hand.tolist(),
+            "hand_position": hand.tolist(),
+            "torso_rotation": self.get_torso_rotation(),
             "reaching": self.reaching,
         }
+
+    def get_torso_rotation(self) -> float:
+        """Return torso yaw in degrees (0 = facing +x, 90 = sideways)."""
+        return float(self._robot_yaw)
 
     def get_hand_position(self) -> np.ndarray:
         if self._articulation_ok and self.hand_xform is not None:
@@ -1105,10 +1116,19 @@ class BAOEnv:
     def check_success(self) -> bool:
         return bool(self.get_distance_to_target() < SUCCESS_DISTANCE)
 
-    def check_collision_with_wall(self) -> Optional[Dict[str, Any]]:
+    def _get_wall_collision_info(self) -> Optional[Dict[str, Any]]:
         root = self._root_position()
         hand = self.get_hand_position()
         return _check_wall_collision(root, np.radians(self._robot_yaw), hand_pos=hand)
+
+    def check_collision_with_wall(self) -> bool:
+        """Return True when the robot is currently colliding with a panel."""
+        return self._get_wall_collision_info() is not None
+
+    def get_collision_position(self) -> Optional[List[float]]:
+        """Return the current collision point (x, y, z) or None."""
+        info = self._get_wall_collision_info()
+        return list(info["point"]) if info else None
 
     def execute_action(self, action: str, n_steps: Optional[int] = None) -> StepResult:
         if n_steps is None:
@@ -1154,15 +1174,18 @@ class BAOEnv:
 
     def _apply_action(self, action: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         root = self._root_position()
-        yaw = np.radians(self._robot_yaw)
 
         if action in ("forward", "backward", "left", "right"):
-            sign = 1.0 if action in ("forward", "right") else -1.0
-            if action in ("forward", "backward"):
-                delta = _forward_vector(yaw) * (sign * MOVE_STEP)
-            else:
-                delta = _rotate_xz(np.array([0.0, 0.0, sign * MOVE_STEP]), yaw)
-            target = root + delta
+            # World-fixed translations: forward/backward move x, left/right
+            # move z. They never depend on the robot's current yaw.
+            world_delta = {
+                "forward": np.array([MOVE_STEP, 0.0, 0.0], dtype=float),
+                "backward": np.array([-MOVE_STEP, 0.0, 0.0], dtype=float),
+                "left": np.array([0.0, 0.0, -MOVE_STEP], dtype=float),
+                "right": np.array([0.0, 0.0, MOVE_STEP], dtype=float),
+            }[action]
+            target = root + world_delta
+            yaw = np.radians(self._robot_yaw)
             collision = _check_wall_collision(target, yaw, hand_pos=None)
             if collision is not None:
                 return False, f"blocked by transparent wall ({collision['part']})", collision

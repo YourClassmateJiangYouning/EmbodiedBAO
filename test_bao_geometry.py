@@ -12,7 +12,6 @@ from environment import (
     HAND_LOCAL_REST,
     MOVE_STEP,
     ROBOT_START_POS,
-    _forward_vector,
     _isaac_to_user_pos,
     _user_to_isaac_pos,
 )
@@ -38,6 +37,9 @@ def _make_env() -> BAOEnv:
     env.robot_root = _FakeRoot()
     env._robot_ground_offset = GROUND_OFFSET
     env._robot_yaw = 0.0
+    env._articulation_ok = False
+    env.hand_xform = None
+    env.reaching = False
     return env
 
 
@@ -53,11 +55,39 @@ class CoordinateRegressionTest(unittest.TestCase):
         for _ in range(10):
             root = env._root_position()
             ys.append(float(root[1]))
-            env._set_robot_pose(
-                root + _forward_vector(np.radians(env._robot_yaw)) * MOVE_STEP,
-                env._robot_yaw,
-            )
+            env._set_robot_pose(root + np.array([MOVE_STEP, 0.0, 0.0]), env._robot_yaw)
         np.testing.assert_allclose(ys, np.zeros(10), atol=1e-9)
+
+    def test_translations_use_fixed_world_axes(self) -> None:
+        env = _make_env()
+        env._set_robot_pose(ROBOT_START_POS, 90.0)
+        self.assertAlmostEqual(float(env._robot_yaw), 90.0)
+
+        env._apply_action("forward")
+        pos = env._root_position()
+        self.assertAlmostEqual(pos[0], 1.55)
+        self.assertAlmostEqual(pos[2], 0.0)
+
+        env._apply_action("backward")
+        pos = env._root_position()
+        self.assertAlmostEqual(pos[0], 1.50)
+
+        env._apply_action("left")
+        pos = env._root_position()
+        self.assertAlmostEqual(pos[2], -MOVE_STEP)
+
+        env._apply_action("right")
+        pos = env._root_position()
+        self.assertAlmostEqual(pos[2], 0.0)
+        self.assertAlmostEqual(env.get_torso_rotation(), 90.0)
+
+    def test_collision_bool_and_position_api(self) -> None:
+        env = _make_env()
+        env._set_robot_pose(np.array([1.95, 0.0, 0.0]), 0.0)
+        self.assertTrue(env.check_collision_with_wall())
+        point = env.get_collision_position()
+        self.assertIsNotNone(point)
+        self.assertEqual(len(point), 3)
 
     def test_analytic_hand_heights_are_ground_relative(self) -> None:
         env = _make_env()

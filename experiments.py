@@ -9,8 +9,9 @@ Unitree H1 agent:
     Level 3  Self-Referential Adjust  (generic task only, minimal priors)
 
 Every episode resets the Isaac Sim scene, runs at most ``max_steps``
-(default 30), and terminates on task success, three wall collisions, or step
-exhaustion.  Each step follows the canonical loop:
+(default 30), and terminates only on task success or step exhaustion. Wall
+collisions are recorded but never terminate the episode.  Each step follows
+the canonical loop:
 
     image  = env.get_camera_image()
     state  = env.get_robot_state()
@@ -48,12 +49,12 @@ from environment import ACTIONS
 
 
 ACTION_DESCRIPTIONS: Dict[str, str] = {
-    "forward": "translate 5 cm in the current facing direction",
-    "backward": "translate 5 cm opposite to the current facing direction",
-    "left": "translate 5 cm to the left of the current facing direction",
-    "right": "translate 5 cm to the right of the current facing direction",
-    "turn_left": "rotate the torso 15 degrees to the left",
-    "turn_right": "rotate the torso 15 degrees to the right",
+    "forward": "translate 5 cm along the world +x axis",
+    "backward": "translate 5 cm along the world -x axis",
+    "left": "translate 5 cm along the world -z axis",
+    "right": "translate 5 cm along the world +z axis",
+    "turn_left": "rotate the torso 15 degrees counterclockwise around +y",
+    "turn_right": "rotate the torso 15 degrees clockwise around +y",
     "reach": "extend the right arm forward",
     "retreat": "pull the right arm back",
 }
@@ -63,13 +64,47 @@ ACTION_OPTIONS_STRING: str = "\n".join(
 )
 
 
+LEVEL0_FULL_PROMPT = """You are a Unitree H1 humanoid robot in a simulation environment.
+
+【Scene Description】
+A transparent wall spans the entire 4m × 4m scene at x=2.0m, dividing it into front and back halves.
+- The wall is 2.0m tall and extends from z=-2.0m to z=2.0m
+- In the center of the wall at z=0, there is a vertical opening (passage) that goes from the floor to the top of the wall
+- The opening is 0.38m wide
+
+【Your Body Parameters】
+- Shoulder width: 0.57m
+- Body thickness (sideways): 0.22m
+- Arm length: 0.338m
+
+【Critical Understanding】
+- Shoulder width (0.57m) > opening width (0.38m) → You CANNOT pass through facing forward
+- Body thickness (0.22m) < opening width (0.38m) → You CAN pass through if you turn sideways
+- Arm length (0.338m) < distance from wall to ball (0.40m) → You CANNOT reach the ball from the front
+
+【Task】
+A green ball is located behind the wall at x=2.4m, z=0, height 1.2m. Reach the green ball.
+
+【Complete Solution - Follow These Steps】
+Step 1: Move forward to the opening at x=2.0m, z=0
+Step 2: Turn your body sideways (rotate 90 degrees left or right)
+Step 3: Move forward through the opening while staying sideways
+Step 4: Once through the wall (x > 2.0m), turn back to face the ball
+Step 5: Reach your arm forward to touch the green ball
+
+【Available Actions】
+You must respond with a JSON object containing one action:
+{"action": "forward"}  - move forward 5cm
+{"action": "backward"} - move backward 5cm
+{"action": "left"}     - move left 5cm
+{"action": "right"}    - move right 5cm
+{"action": "turn_left"} - rotate body 15 degrees counterclockwise
+{"action": "turn_right"} - rotate body 15 degrees clockwise
+{"action": "reach"}    - extend arm forward
+{"action": "retreat"}  - retract arm back"""
+
 LEVEL_PROMPTS: Dict[int, str] = {
-    0: (
-        "There is a transparent wall across the entire scene with a 380mm vertical opening "
-        "in the center. Your shoulder width is 570mm, so you cannot pass through facing "
-        "forward. You must rotate your body 90 degrees (sideways) to pass through the "
-        "opening, then reach the green ball behind the wall."
-    ),
+    0: LEVEL0_FULL_PROMPT,
     1: (
         "There is a transparent wall across the entire scene with a narrow vertical opening "
         "in the center. You need to get the green ball behind the wall."
@@ -77,16 +112,6 @@ LEVEL_PROMPTS: Dict[int, str] = {
     2: "Your task is to reach the green ball in front of you.",
     3: "Your task is to reach the green ball in front of you.",
 }
-
-LEVEL_COT: Dict[int, str] = {
-    0: (
-        "Step 1: Move forward to the opening. "
-        "Step 2: Rotate your body sideways. "
-        "Step 3: Pass through the opening. "
-        "Step 4: Reach for the green ball."
-    ),
-}
-
 
 def build_prompt(
     level: int,
@@ -96,15 +121,40 @@ def build_prompt(
     max_steps: int = 30,
 ) -> str:
     """Build the per-level prompt text for one decision step."""
+    if level == 0:
+        parts = [LEVEL_PROMPTS[0]]
+        if history:
+            lines = ["Action history (most recent first):"]
+            for item in list(history)[-6:][::-1]:
+                lines.append(f"- {item.get('action')} -> {item.get('feedback')}")
+            parts.append("\n".join(lines))
+        position = state.get("position", [0.0, 0.0, 0.0])
+        yaw = float(
+            state.get(
+                "torso_rotation",
+                state.get("orientation", {}).get("yaw", 0.0),
+            )
+        )
+        distance = float(state.get("distance_to_target", float("nan")))
+        parts.append(
+            "\n".join(
+                [
+                    "Current state:",
+                    f"- position (x, y, z): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]",
+                    f"- torso yaw (degrees): {yaw:.1f}",
+                    f"- distance to green ball surface: {distance:.3f} m",
+                    f"You have at most {max_steps} steps in this episode.",
+                ]
+            )
+        )
+        return "\n\n".join(parts)
+
     lines = [
         "You are a Unitree H1 humanoid robot inside a 4m x 4m room.",
         "You perceive the scene through your head camera and control your body "
         "with discrete actions.",
         LEVEL_PROMPTS[level],
     ]
-    if level == 0:
-        lines.append("Use the following step-by-step reasoning template:")
-        lines.append(LEVEL_COT[0])
 
     if history:
         lines.append("Action history (most recent first):")
@@ -257,7 +307,6 @@ class BAOExperimentRunner:
         env: Any,
         model: str,
         max_steps: int = 30,
-        collision_timeout: int = 3,
         max_image_history: int = 1,
         tag: Optional[str] = None,
         save_obs: bool = False,
@@ -268,7 +317,6 @@ class BAOExperimentRunner:
         self.env = env
         self.model = model.replace("/", "-")
         self.max_steps = int(max_steps)
-        self.collision_timeout = int(collision_timeout)
         self.max_image_history = int(max_image_history)
         self.save_obs = bool(save_obs)
         self.seed = int(seed)
@@ -286,46 +334,70 @@ class BAOExperimentRunner:
     # Public entry points
     # ------------------------------------------------------------------
 
-    def run_all(self, levels: Sequence[int] = (0, 1, 2, 3), episodes_per_level: int = 50) -> Dict[int, List[Dict[str, Any]]]:
+    def run_all(
+        self,
+        levels: Sequence[int] = (0, 1, 2, 3),
+        episodes_per_level: int = 50,
+        rounds: int = 3,
+    ) -> Dict[int, List[Dict[str, Any]]]:
         results: Dict[int, List[Dict[str, Any]]] = {}
         for level in levels:
-            results[int(level)] = self.run_level(level=int(level), episodes=episodes_per_level)
+            results[int(level)] = self.run_level(
+                level=int(level),
+                episodes=episodes_per_level,
+                rounds=rounds,
+            )
         return results
 
     def run_level(
         self,
         level: int,
         episodes: int = 50,
+        rounds: int = 3,
         progress_callback: Optional[
             Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
         ] = None,
     ) -> List[Dict[str, Any]]:
-        episodes_done: List[Dict[str, Any]] = []
-        for episode_id in range(int(episodes)):
-            episode_result = self._run_episode(level=level, episode_id=episode_id)
-            episodes_done.append(episode_result)
-            self._save_episode(episode_result)
-            print(
-                f"[level {level}] episode {episode_id + 1}/{episodes} "
-                f"success={episode_result['success']} "
-                f"end={episode_result['end_reason']} "
-                f"steps={len(episode_result['steps'])}"
-            )
-            if progress_callback is not None:
-                progress_callback(
-                    episode_id + 1, int(episodes), episode_result, episodes_done
+        all_episodes: List[Dict[str, Any]] = []
+        episodes_per_round = int(episodes)
+        total = episodes_per_round * int(rounds)
+        completed = 0
+        for round_id in range(int(rounds)):
+            round_episodes: List[Dict[str, Any]] = []
+            for episode_id in range(episodes_per_round):
+                episode_result = self._run_episode(
+                    level=level,
+                    episode_id=episode_id,
+                    round_id=round_id,
                 )
-        summary = self._summarize(level, episodes_done)
-        self._save_summary(level, episodes_done)
-        return episodes_done
+                round_episodes.append(episode_result)
+                all_episodes.append(episode_result)
+                self._save_episode(episode_result)
+                completed += 1
+                print(
+                    f"[level {level} round {round_id}] episode {episode_id + 1}/"
+                    f"{episodes_per_round} success={episode_result['success']} "
+                    f"end={episode_result['end_reason']} "
+                    f"steps={len(episode_result['steps'])}"
+                )
+                if progress_callback is not None:
+                    progress_callback(
+                        completed,
+                        total,
+                        episode_result,
+                        all_episodes,
+                    )
+            self._save_summary(level, round_id, round_episodes)
+        return all_episodes
 
     # ------------------------------------------------------------------
     # Single episode
     # ------------------------------------------------------------------
 
-    def _run_episode(self, level: int, episode_id: int) -> Dict[str, Any]:
+    def _run_episode(self, level: int, episode_id: int, round_id: int = 0) -> Dict[str, Any]:
         agent_log = os.path.join(
-            self.log_dir, f"level{level}_episode{episode_id:03d}_agent.txt"
+            self.log_dir,
+            f"round{round_id}_level{level}_episode{episode_id:03d}_agent.txt",
         )
         agent = AgentAdapter(model=self.model, log_file=agent_log)
 
@@ -339,7 +411,7 @@ class BAOExperimentRunner:
         success = False
         end_reason = "max_steps"
 
-        for step_number in range(1, self.max_steps + 1):
+        for step in range(self.max_steps):
             rgb = self.env.get_camera_image()
             state = self.env.get_robot_state()
             state["distance_to_target"] = distance
@@ -368,29 +440,45 @@ class BAOExperimentRunner:
                 collision_info = result.collision
                 distance = result.distance
                 step_success = result.success
-
-            # Explicit wall check (step g of the protocol).
-            explicit_collision = self.env.check_collision_with_wall()
-            collided = (not result.legal) if action_name is not None else False
-            collided = collided or explicit_collision is not None
-            if collision_info is None:
-                collision_info = explicit_collision
+                explicit_collision = self.env.check_collision_with_wall()
+                collided = (not result.legal) or explicit_collision
+                if explicit_collision and collision_info is None:
+                    point = self.env.get_collision_position()
+                    if point is not None:
+                        collision_info = {"point": point}
             if collided:
                 wall_collision_count += 1
 
             new_state = self.env.get_robot_state()
+            hand_pos = new_state.get(
+                "hand_position", new_state.get("end_effector_position", [0.0, 0.0, 0.0])
+            )
+            collision_point = (
+                collision_info.get("point") if collision_info else None
+            )
             step_record = {
                 "episode_id": episode_id,
                 "level": level,
                 "model_name": self.model,
-                "step_number": step_number,
-                "action_taken": action_taken,
-                "hand_position": new_state["end_effector_position"],
-                "torso_orientation": new_state["orientation"],
-                "distance_to_target": distance,
-                "collision_with_wall": collided,
-                "wall_collision_point": collision_info.get("point") if collision_info else None,
-                "success": bool(step_success),
+                "round": round_id,
+                "step": step,
+                "action": action_taken,
+                "hand_x": float(hand_pos[0]) if len(hand_pos) > 0 else None,
+                "hand_y": float(hand_pos[1]) if len(hand_pos) > 1 else None,
+                "hand_z": float(hand_pos[2]) if len(hand_pos) > 2 else None,
+                "hand_distance_to_ball": distance,
+                "torso_rotation": self.env.get_torso_rotation(),
+                "collision_with_wall": bool(collided),
+                "collision_position_x": (
+                    float(collision_point[0]) if collision_point else None
+                ),
+                "collision_position_y": (
+                    float(collision_point[1]) if collision_point else None
+                ),
+                "collision_position_z": (
+                    float(collision_point[2]) if collision_point else None
+                ),
+                "step_success": bool(step_success),
                 "llm_response_time_ms": round(latency_ms, 3),
             }
             steps.append(step_record)
@@ -402,30 +490,29 @@ class BAOExperimentRunner:
                 image_history = image_history[-self.max_image_history :]
 
             if self.save_obs:
-                self._save_observation(episode_id, step_number, action_taken, rgb)
+                self._save_observation(round_id, episode_id, step, action_taken, rgb)
 
             if step_success:
                 success = True
                 end_reason = "success"
-                break
-            if wall_collision_count >= self.collision_timeout:
-                end_reason = "collision_timeout"
                 break
 
         return {
             "episode_id": episode_id,
             "level": level,
             "model_name": self.model,
-            "max_steps": self.max_steps,
-            "collision_timeout": self.collision_timeout,
+            "round": round_id,
             "success": success,
+            "total_steps": len(steps),
+            "action_sequence": ",".join(action_sequence),
+            "final_distance": self.env.get_distance_to_target(),
+            "max_steps": self.max_steps,
             "end_reason": end_reason,
             "wall_collision_count": wall_collision_count,
             "invalid_response_count": sum(
-                1 for step in steps if step["action_taken"] == "invalid"
+                1 for record in steps if record["action"] == "invalid"
             ),
             "total_llm_time_ms": round(total_llm_time_ms, 3),
-            "action_sequence": action_sequence,
             "steps": steps,
         }
 
@@ -433,28 +520,44 @@ class BAOExperimentRunner:
     # Persistence
     # ------------------------------------------------------------------
 
-    def _result_dir(self, level: int) -> str:
-        path = os.path.join(self.results_root, f"level{level}", self.model)
+    def _result_dir(self, level: int, round_id: int = 0) -> str:
+        path = os.path.join(
+            self.results_root, f"level{level}", self.model, f"round{round_id}"
+        )
         os.makedirs(path, exist_ok=True)
         return path
 
     def _save_episode(self, episode: Dict[str, Any]) -> None:
         path = os.path.join(
-            self._result_dir(episode["level"]),
+            self._result_dir(episode["level"], episode.get("round", 0)),
             f"episode_{episode['episode_id']:03d}.json",
         )
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(episode, handle, indent=2, ensure_ascii=False)
 
-    def _save_summary(self, level: int, episodes: List[Dict[str, Any]]) -> None:
-        path = os.path.join(self._result_dir(level), f"summary_{self.tag}.json")
+    def _save_summary(
+        self, level: int, round_id: int, episodes: List[Dict[str, Any]]
+    ) -> None:
+        path = os.path.join(
+            self._result_dir(level, round_id), f"summary_{self.tag}.json"
+        )
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(self._summarize(level, episodes), handle, indent=2, ensure_ascii=False)
 
-    def _save_observation(self, episode_id: int, step_number: int, action: str, rgb: np.ndarray) -> None:
+    def _save_observation(
+        self,
+        round_id: int,
+        episode_id: int,
+        step: int,
+        action: str,
+        rgb: np.ndarray,
+    ) -> None:
         from PIL import Image
 
-        path = os.path.join(self.obs_dir, f"ep{episode_id:03d}_step{step_number:02d}_{action}.png")
+        path = os.path.join(
+            self.obs_dir,
+            f"round{round_id}_ep{episode_id:03d}_step{step:02d}_{action}.png",
+        )
         Image.fromarray(rgb).save(path)
 
     def save_args(self, args: Any) -> None:
@@ -468,10 +571,12 @@ class BAOExperimentRunner:
             return {"level": level, "episodes": 0}
         action_counter: Counter = Counter()
         for episode in episodes:
-            action_counter.update(episode["action_sequence"])
+            for record in episode.get("steps", []):
+                action_counter.update([str(record.get("action", ""))])
         return {
             "level": level,
             "model_name": episodes[0]["model_name"],
+            "rounds": sorted({int(e.get("round", 0)) for e in episodes}),
             "episodes": len(episodes),
             "success_rate": float(np.mean([e["success"] for e in episodes])),
             "avg_steps": float(np.mean([len(e["steps"]) for e in episodes])),
@@ -489,8 +594,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=str, required=True, help="Model name passed to ai_agent")
     parser.add_argument("--levels", type=int, nargs="+", default=[0, 1, 2, 3])
     parser.add_argument("--episodes", type=int, default=50, help="Episodes per level")
+    parser.add_argument("--rounds", type=int, default=3, help="Repeated rounds per model")
     parser.add_argument("--max_steps", type=int, default=30)
-    parser.add_argument("--collision_timeout", type=int, default=3)
     parser.add_argument("--max_image_history", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--tag", type=str, default="", help="Log/result tag")
@@ -516,7 +621,6 @@ def main() -> None:
             env=env,
             model=args.model,
             max_steps=args.max_steps,
-            collision_timeout=args.collision_timeout,
             max_image_history=args.max_image_history,
             tag=args.tag,
             save_obs=args.save_obs,
@@ -524,7 +628,11 @@ def main() -> None:
         )
         runner.save_args(args)
         for level in args.levels:
-            episodes = runner.run_level(level=level, episodes=args.episodes)
+            episodes = runner.run_level(
+                level=level,
+                episodes=args.episodes,
+                rounds=args.rounds,
+            )
             summary = BAOExperimentRunner._summarize(level, episodes)
             print(
                 f"[level {level}] success_rate={summary['success_rate']:.3f} "

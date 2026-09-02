@@ -1,7 +1,7 @@
 """Quantitative "insight vs gradual learning" analysis for EmbodiedBAO.
 
 The module consumes the per-episode JSON files written by ``experiments.py``
-(``results/level{level}/{model}/episode_*.json``) and computes four metrics:
+(``results/level{level}/{model}/round*/episode_*.json``) and computes four metrics:
 
 1. Step-ness      : max single-step improvement of the smoothed success-rate
                     curve (sliding window, default 5).  > 0.5 => insight,
@@ -43,12 +43,26 @@ EXPLORATORY_ACTIONS = {"backward", "left", "right", "turn_left", "turn_right"}
 
 def load_episodes(results_root: str, level: int, model: str) -> List[Dict[str, Any]]:
     """Load and sort per-episode JSON files for one model at one level."""
-    pattern = os.path.join(results_root, f"level{level}", model, "episode_*.json")
+    pattern = os.path.join(
+        results_root, f"level{level}", model, "round*", "episode_*.json"
+    )
     episodes: List[Dict[str, Any]] = []
     for path in glob.glob(pattern):
         with open(path, "r", encoding="utf-8") as handle:
             episodes.append(json.load(handle))
-    episodes.sort(key=lambda ep: int(ep.get("episode_id", 0)))
+    if not episodes:
+        legacy_pattern = os.path.join(
+            results_root, f"level{level}", model, "episode_*.json"
+        )
+        for path in glob.glob(legacy_pattern):
+            with open(path, "r", encoding="utf-8") as handle:
+                episodes.append(json.load(handle))
+    episodes.sort(
+        key=lambda ep: (
+            int(ep.get("round", 0)),
+            int(ep.get("episode_id", 0)),
+        )
+    )
     return episodes
 
 
@@ -63,6 +77,8 @@ def discover_models(results_root: str, level: int) -> List[str]:
         if not os.path.isdir(model_dir):
             continue
         has_episodes = any(
+            glob.glob(os.path.join(model_dir, "round*", "episode_*.json"))
+        ) or any(
             fname.startswith("episode_") and fname.endswith(".json")
             for fname in os.listdir(model_dir)
         )
@@ -135,13 +151,13 @@ def compute_step_ness(
 
 
 def _episode_actions(episode: Dict[str, Any]) -> List[str]:
-    return [str(step.get("action_taken", "")) for step in episode.get("steps", [])]
+    return [str(step.get("action", "")) for step in episode.get("steps", [])]
 
 
 def _episode_yaws(episode: Dict[str, Any]) -> np.ndarray:
     yaws = []
     for step in episode.get("steps", []):
-        yaw = step.get("torso_orientation", {}).get("yaw", 0.0)
+        yaw = step.get("torso_rotation", 0.0)
         yaws.append(float(yaw))
     return np.asarray(yaws, dtype=float)
 
@@ -149,7 +165,11 @@ def _episode_yaws(episode: Dict[str, Any]) -> np.ndarray:
 def _episode_hands(episode: Dict[str, Any]) -> List[np.ndarray]:
     hands = []
     for step in episode.get("steps", []):
-        hand = step.get("hand_position", [0.0, 0.0, 0.0])
+        hand = [
+            step.get("hand_x", 0.0),
+            step.get("hand_y", 0.0),
+            step.get("hand_z", 0.0),
+        ]
         hands.append(np.asarray(hand, dtype=float))
     return hands
 
@@ -302,7 +322,7 @@ def compute_mirrorbench_metrics(
     for episode in episodes:
         tsr_list.append(1.0 if episode.get("success") else 0.0)
         dists = [
-            float(step.get("distance_to_target", float("nan")))
+            float(step.get("hand_distance_to_ball", float("nan")))
             for step in episode.get("steps", [])
         ]
         dists = [d for d in dists if d == d]
@@ -312,7 +332,7 @@ def compute_mirrorbench_metrics(
         invalid_count += sum(
             1
             for step in episode.get("steps", [])
-            if step.get("action_taken") == "invalid"
+            if step.get("action") == "invalid"
         )
         if dists:
             denominator = dists[0] - dist_threshold
@@ -434,6 +454,7 @@ def analyze_episodes(
             gradual_threshold=gradual_adjust_threshold,
         )
         row["episode_id"] = ep.get("episode_id", 0)
+        row["round"] = ep.get("round", 0)
         one_shot_rows.append(row)
 
     indexes = [row["one_shot_index"] for row in one_shot_rows]

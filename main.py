@@ -29,10 +29,12 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--episodes", type=int, default=50, help="Episodes per level")
     parser.add_argument(
+        "--rounds", type=int, default=3, help="Repeated rounds per model"
+    )
+    parser.add_argument(
         "--all-levels", action="store_true", help="Run levels 0, 1, 2, 3"
     )
     parser.add_argument("--max_steps", type=int, default=30)
-    parser.add_argument("--collision_timeout", type=int, default=3)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--tag", type=str, default="", help="Optional run tag")
     parser.add_argument(
@@ -58,26 +60,28 @@ def save_episodes_csv(
     path = os.path.join(results_root, f"{safe_model}_{level}_{timestamp}.csv")
 
     fields = [
+        "round",
         "episode_id",
         "level",
         "model_name",
-        "step_number",
-        "action_taken",
+        "step",
+        "action",
         "hand_x",
         "hand_y",
         "hand_z",
-        "roll",
-        "pitch",
-        "yaw",
-        "distance_to_target",
+        "hand_distance_to_ball",
+        "torso_rotation",
         "collision_with_wall",
-        "wall_collision_x",
-        "wall_collision_y",
-        "wall_collision_z",
-        "success",
+        "collision_position_x",
+        "collision_position_y",
+        "collision_position_z",
+        "step_success",
         "llm_response_time_ms",
         "episode_success",
         "end_reason",
+        "total_steps",
+        "final_distance",
+        "action_sequence",
     ]
 
     with open(path, "w", newline="", encoding="utf-8") as handle:
@@ -85,31 +89,30 @@ def save_episodes_csv(
         writer.writeheader()
         for episode in episodes:
             for step in episode.get("steps", []):
-                hand = step.get("hand_position") or [0.0, 0.0, 0.0]
-                orientation = step.get("torso_orientation") or {}
-                collision_point = step.get("wall_collision_point") or [None, None, None]
                 writer.writerow(
                     {
+                        "round": step.get("round", episode.get("round", 0)),
                         "episode_id": step.get("episode_id", episode.get("episode_id")),
                         "level": step.get("level", episode.get("level")),
                         "model_name": step.get("model_name", episode.get("model_name")),
-                        "step_number": step.get("step_number"),
-                        "action_taken": step.get("action_taken"),
-                        "hand_x": hand[0] if len(hand) > 0 else None,
-                        "hand_y": hand[1] if len(hand) > 1 else None,
-                        "hand_z": hand[2] if len(hand) > 2 else None,
-                        "roll": orientation.get("roll"),
-                        "pitch": orientation.get("pitch"),
-                        "yaw": orientation.get("yaw"),
-                        "distance_to_target": step.get("distance_to_target"),
+                        "step": step.get("step"),
+                        "action": step.get("action"),
+                        "hand_x": step.get("hand_x"),
+                        "hand_y": step.get("hand_y"),
+                        "hand_z": step.get("hand_z"),
+                        "hand_distance_to_ball": step.get("hand_distance_to_ball"),
+                        "torso_rotation": step.get("torso_rotation"),
                         "collision_with_wall": step.get("collision_with_wall"),
-                        "wall_collision_x": collision_point[0] if collision_point else None,
-                        "wall_collision_y": collision_point[1] if collision_point else None,
-                        "wall_collision_z": collision_point[2] if collision_point else None,
-                        "success": step.get("success"),
+                        "collision_position_x": step.get("collision_position_x"),
+                        "collision_position_y": step.get("collision_position_y"),
+                        "collision_position_z": step.get("collision_position_z"),
+                        "step_success": step.get("step_success"),
                         "llm_response_time_ms": step.get("llm_response_time_ms"),
                         "episode_success": episode.get("success"),
                         "end_reason": episode.get("end_reason"),
+                        "total_steps": episode.get("total_steps"),
+                        "final_distance": episode.get("final_distance"),
+                        "action_sequence": episode.get("action_sequence"),
                     }
                 )
     return path
@@ -121,12 +124,14 @@ def _progress_callback(
     if completed % 10 == 0 or completed == total:
         success_count = sum(1 for ep in episodes_done if ep.get("success"))
         rate = success_count / completed if completed else 0.0
+        round_id = int(episodes_done[-1].get("round", 0)) if episodes_done else 0
         print(
-            f"[main] level {level}: episode {completed}/{total}, "
+            f"[main] level {level} round {round_id}: episode {completed}/{total}, "
             f"current success rate = {rate:.3f}"
         )
         _write_progress(
-            f"level {level}: episode {completed}/{total} success_rate={rate:.3f}"
+            f"level {level} round {round_id}: episode {completed}/{total} "
+            f"success_rate={rate:.3f}"
         )
 
 
@@ -141,7 +146,8 @@ def main() -> None:
     args = parse_args()
     levels = [0, 1, 2, 3] if args.all_levels else [args.level]
     _write_progress(
-        f"main start: model={args.model} levels={levels} episodes={args.episodes}"
+        f"main start: model={args.model} levels={levels} "
+        f"rounds={args.rounds} episodes={args.episodes}"
     )
     env = None
     try:
@@ -168,7 +174,6 @@ def main() -> None:
             env=env,
             model=args.model,
             max_steps=args.max_steps,
-            collision_timeout=args.collision_timeout,
             tag=args.tag,
         )
         runner.save_args(args)
@@ -179,6 +184,7 @@ def main() -> None:
             episodes = runner.run_level(
                 level=level,
                 episodes=args.episodes,
+                rounds=args.rounds,
                 progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
                     lvl, completed, total, episodes_done
                 ),

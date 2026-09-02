@@ -152,7 +152,7 @@ Outputs:
   passage. Body dimensions are the hidden knowledge of the task.
 - The tiered protocol follows MirrorBench prompt ablation:
   - Level 0: full guidance (wall, channel, body size, sideways strategy)
-    plus a 4-step CoT.
+    plus the full 5-step solution.
   - Level 1: wall and narrow opening disclosed; the agent must find the
     sideways solution itself.
   - Level 2: generic task only ("reach the green ball in front of you").
@@ -169,13 +169,15 @@ Outputs:
 - Robot: Unitree H1 loaded from Isaac Sim/Isaac Lab built-in assets or a
   local path. Root movement is kinematic; actions are gated by analytic
   collision checks that return the colliding part and contact point.
-- Actions: `forward/backward/left/right` (5cm), `turn_left/turn_right`
-  (15 degrees), `reach/retreat` (arm extension/retraction). Reach prefers
-  articulation joint control and falls back to a kinematic hand model.
+- Actions: `forward/backward/left/right` are fixed world-axis translations
+  (+x/-x/-z/+z, 5cm), `turn_left/turn_right` rotate 15 degrees, and
+  `reach/retreat` extend/retract the arm. Reach prefers articulation joint
+  control and falls back to a kinematic hand model.
 - Main interface: `reset_scene()`, `get_camera_image()` (1024x1024 RGB),
   `get_robot_state()`, `get_hand_position()`, `get_distance_to_target()`,
-  `get_body_obstacle_status()`, `check_success()` (< 3cm),
-  `execute_action(action)`, `check_collision_with_wall()`.
+  `get_torso_rotation()`, `check_success()` (< 3cm),
+  `execute_action(action)`, `check_collision_with_wall()` (bool),
+  `get_collision_position()`.
 - `execute_action` returns `StepResult(rgb, legal, feedback, distance,
   success, collision, state)`. `legal=False` means the action was blocked
   by the transparent wall.
@@ -188,23 +190,24 @@ Outputs:
 ## experiments.py
 
 - Level 0 (guided solution): wall, 380mm opening, 570mm shoulder width,
-  90-degree sideways strategy, and a 4-step CoT are disclosed.
+  90-degree sideways strategy, and the full 5-step solution are disclosed.
 - Level 1 (autonomous reasoning): wall and narrow opening disclosed, no
   solution and no CoT.
 - Level 2 (implicit obstacle discovery): generic task only, no wall or
   channel information.
 - Level 3 (self-referential body adjustment): generic task only, no wall,
   channel, or target-behind-wall prior.
-- Each level runs `--episodes` episodes (default 50). Each episode has at
-  most 30 steps and ends on success, 3 cumulative wall collisions, or step
-  exhaustion.
+- Each level runs `--rounds x --episodes` episodes (default 3 rounds x 50).
+  Each episode has at most 30 steps and ends only on success or step
+  exhaustion; wall collisions are recorded but do not terminate.
 - Per-step loop: `get_camera_image -> get_robot_state -> build prompt ->
   ai_agent.get_action -> execute_action -> check_success ->
   check_collision_with_wall`. All specified fields are recorded, including
   `llm_response_time_ms` and `action_sequence`.
-- Outputs: `results/level{level}/{model}/episode_*.json`,
-  `summary_{tag}.json`, and `logs/{tag}/` (agent logs and optional
-  observation PNGs).
+- Outputs:
+  `results/level{level}/{model}/round*/episode_*.json`,
+  `results/level{level}/{model}/round*/summary_{tag}.json`, and
+  `logs/{tag}/` (agent logs and optional observation PNGs).
 - Expected `ai_agent` interface:
   `ai_agent.get_action(prompt, image, state, history, options)`, or
   `create_agent(model, log_file)` / `get_agent(...)` returning an object
@@ -228,7 +231,7 @@ Outputs:
 
 ## analysis.py
 
-- Input: `results/level{level}/{model}/episode_*.json` written by
+- Input: `results/level{level}/{model}/round*/episode_*.json` written by
   experiments.py.
 - Step-ness: sliding-window (size 5) success rate sequence; max
   single-step improvement > 0.5 is insight, < 0.2 is gradual.
@@ -248,8 +251,8 @@ Outputs:
 ## main.py
 
 - Arguments: `--model` (default gpt-4o), `--level 0-3` (default 0),
-  `--episodes` (default 50), `--all-levels`, plus
-  `--max_steps/--collision_timeout/--headless/--tag`.
+  `--episodes` (default 50), `--rounds` (default 3), `--all-levels`, plus
+  `--max_steps/--headless/--tag`.
 - Flow: `environment.setup_scene()` initializes the scene,
   `ai_agent.create_agent(model=...)` creates the agent,
   `BAOExperimentRunner` runs the requested levels, step data is saved as
