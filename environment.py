@@ -382,9 +382,12 @@ class BAOEnv:
         self._robot_ground_offset = self._compute_robot_ground_offset()
         self._set_robot_pose(ROBOT_START_POS, ROBOT_START_YAW_DEG)
         if self.task_dict.get("hide_robot", False):
-            UsdGeom.Imageable(
-                self.stage.GetPrimAtPath(self.robot_prim_path)
-            ).MakeInvisible()
+            for sub_prim in self.stage.Traverse():
+                if str(sub_prim.GetPath()).startswith(self.robot_prim_path):
+                    try:
+                        UsdGeom.Imageable(sub_prim).MakeInvisible()
+                    except Exception:
+                        pass
         self._find_hand_prim()
         self._find_head_camera_link()
 
