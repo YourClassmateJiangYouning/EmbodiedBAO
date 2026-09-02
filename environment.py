@@ -381,6 +381,10 @@ class BAOEnv:
         self.robot_root = XFormPrim(prim_paths_expr=self.robot_prim_path)
         self._robot_ground_offset = self._compute_robot_ground_offset()
         self._set_robot_pose(ROBOT_START_POS, ROBOT_START_YAW_DEG)
+        if self.task_dict.get("hide_robot", False):
+            UsdGeom.Imageable(
+                self.stage.GetPrimAtPath(self.robot_prim_path)
+            ).MakeInvisible()
         self._find_hand_prim()
         self._find_head_camera_link()
 
