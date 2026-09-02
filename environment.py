@@ -76,7 +76,7 @@ ROBOT_BODY_HALF_HEIGHT = 0.9
 ROBOT_HEAD_HEIGHT = 1.55
 ARM_REACH = 0.34
 MODEL_YAW_OFFSET_DEG = 0.0
-ARM_HANG_SHOULDER_PITCH_RAD = 1.57
+ARM_HANG_SHOULDER_PITCH_RAD = 0.0
 ARM_HANG_ELBOW_PITCH_RAD = 0.0
 
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
@@ -912,6 +912,18 @@ class BAOEnv:
                     np.asarray(positions, dtype=float),
                     np.array(indices, dtype=int),
                 )
+                try:
+                    values = self._articulation_joint_positions()
+                    print(
+                        "[BAOEnv] arm pose:",
+                        [
+                            (names[i], round(float(values[i]), 3))
+                            for i in indices
+                            if i < len(values)
+                        ],
+                    )
+                except Exception:
+                    pass
         except Exception as exc:
             available = (
                 [n for n in dir(self._articulation) if not n.startswith("_")][:60]
