@@ -385,7 +385,7 @@ class BAOEnv:
             for sub_prim in self.stage.Traverse():
                 if str(sub_prim.GetPath()).startswith(self.robot_prim_path):
                     try:
-                        UsdGeom.Imageable(sub_prim).MakeInvisible()
+                        sub_prim.SetActive(False)
                     except Exception:
                         pass
         self._find_hand_prim()
@@ -695,16 +695,22 @@ class BAOEnv:
         quat = self._yaw_quat(yaw_deg + yaw_offset)
         pos_isaac = _user_to_isaac_pos(pos)
         pos_isaac[2] += self._robot_ground_offset
-        self.robot_root.set_world_poses(
-            positions=np.array([pos_isaac]),
-            orientations=np.array([quat]),
-        )
+        try:
+            self.robot_root.set_world_poses(
+                positions=np.array([pos_isaac]),
+                orientations=np.array([quat]),
+            )
+        except Exception:
+            pass
         self._robot_yaw = float(yaw_deg)
 
     def _root_position(self) -> np.ndarray:
         if self.robot_root is None:
             return ROBOT_START_POS.copy()
-        pos = self.robot_root.get_world_poses()[0][0]
+        try:
+            pos = self.robot_root.get_world_poses()[0][0]
+        except Exception:
+            return ROBOT_START_POS.copy()
         return _isaac_to_user_pos(np.asarray(pos, dtype=float))
 
     def _init_robot_controller(self) -> bool:
