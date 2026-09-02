@@ -157,6 +157,27 @@ def main() -> int:
             except Exception as exc:
                 print(f"failed to save {name}: {exc}")
         print("all views done")
+
+        # Report ground-relative coordinates and verify one forward move does
+        # not drift upward (the ground offset must not be applied twice).
+        state = env.get_robot_state()
+        print(
+            "robot_user_position:",
+            [round(float(v), 6) for v in state["position"]],
+        )
+        print(
+            "hand_user_position:",
+            [round(float(v), 6) for v in state["end_effector_position"]],
+        )
+        print("distance_to_target:", round(float(env.get_distance_to_target()), 6))
+        root_before = env._root_position().copy()
+        probe = env.execute_action("forward", n_steps=1)
+        root_after = env._root_position()
+        print("movement_probe:")
+        print("  root_before:", [round(float(v), 6) for v in root_before])
+        print("  root_after:", [round(float(v), 6) for v in root_after])
+        print("  y_delta:", round(float(root_after[1] - root_before[1]), 9))
+        print("  probe_legal:", probe.legal, "feedback:", probe.feedback)
     except Exception:
         traceback.print_exc()
         raise

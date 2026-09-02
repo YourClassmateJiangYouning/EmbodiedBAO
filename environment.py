@@ -713,7 +713,11 @@ class BAOEnv:
             pos = self.robot_root.get_world_poses()[0][0]
         except Exception:
             return ROBOT_START_POS.copy()
-        return _isaac_to_user_pos(np.asarray(pos, dtype=float))
+        user_pos = _isaac_to_user_pos(np.asarray(pos, dtype=float))
+        # The USD root is raised by the ground offset when written, so strip it
+        # back out here to keep x/y/z in ground-relative user coordinates.
+        user_pos[1] -= self._robot_ground_offset
+        return user_pos
 
     def _init_robot_controller(self) -> bool:
         if not self.task_dict.get("robot_physics", False):
