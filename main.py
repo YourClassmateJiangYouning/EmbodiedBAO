@@ -2,6 +2,7 @@
 
 Usage:
     python main.py --model gpt-4o --level 0 --episodes 50
+    python main.py --model gpt-4o --level 4
     python main.py --model claude-3.5-sonnet --level 3 --episodes 50
     python main.py --model gemini-2.5-pro --all-levels
 
@@ -25,7 +26,7 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="EmbodiedBAO experiment entry point.")
     parser.add_argument("--model", type=str, default="gpt-4o", help="Model name")
     parser.add_argument(
-        "--level", type=int, choices=[0, 1, 2, 3], default=0, help="Level to run"
+        "--level", type=int, choices=[0, 1, 2, 3, 4], default=0, help="Level to run"
     )
     parser.add_argument("--episodes", type=int, default=50, help="Episodes per level")
     parser.add_argument(
@@ -35,6 +36,9 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         "--all-levels", action="store_true", help="Run levels 0, 1, 2, 3"
     )
     parser.add_argument("--max_steps", type=int, default=30)
+    parser.add_argument("--phase_a_initial", type=int, default=10)
+    parser.add_argument("--phase_a_max", type=int, default=20)
+    parser.add_argument("--phase_b_episodes", type=int, default=20)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--tag", type=str, default="", help="Optional run tag")
     parser.add_argument(
@@ -64,6 +68,9 @@ def save_episodes_csv(
         "episode_id",
         "level",
         "model_name",
+        "phase",
+        "channel_width",
+        "sideways_rate",
         "step",
         "action",
         "hand_x",
@@ -95,6 +102,11 @@ def save_episodes_csv(
                         "episode_id": step.get("episode_id", episode.get("episode_id")),
                         "level": step.get("level", episode.get("level")),
                         "model_name": step.get("model_name", episode.get("model_name")),
+                        "phase": step.get("phase", episode.get("phase")),
+                        "channel_width": step.get(
+                            "channel_width", episode.get("channel_width")
+                        ),
+                        "sideways_rate": episode.get("sideways_rate"),
                         "step": step.get("step"),
                         "action": step.get("action"),
                         "hand_x": step.get("hand_x"),
@@ -181,14 +193,24 @@ def main() -> None:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         for level in levels:
             _write_progress(f"level {level} start")
-            episodes = runner.run_level(
-                level=level,
-                episodes=args.episodes,
-                rounds=args.rounds,
-                progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
-                    lvl, completed, total, episodes_done
-                ),
-            )
+            if level == 4:
+                episodes = runner.run_level_4(
+                    phase_a_initial=args.phase_a_initial,
+                    phase_a_max=args.phase_a_max,
+                    phase_b_episodes=args.phase_b_episodes,
+                    progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
+                        lvl, completed, total, episodes_done
+                    ),
+                )
+            else:
+                episodes = runner.run_level(
+                    level=level,
+                    episodes=args.episodes,
+                    rounds=args.rounds,
+                    progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
+                        lvl, completed, total, episodes_done
+                    ),
+                )
             csv_path = save_episodes_csv(
                 episodes, model=args.model, level=level, timestamp=timestamp
             )

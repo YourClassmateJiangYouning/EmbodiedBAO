@@ -137,11 +137,18 @@ def _user_to_isaac_scale(scale: np.ndarray) -> np.ndarray:
     return np.array([s[0], s[2], s[1]], dtype=float)
 
 
-def _panel_boxes() -> List[Tuple[np.ndarray, np.ndarray]]:
+def _panel_boxes(
+    channel_width: Optional[float] = None,
+) -> List[Tuple[np.ndarray, np.ndarray]]:
     """Return (center, half-extents) of the two wall panels."""
-    z_center = PANEL_WIDTH / 2.0 + CHANNEL_HALF_WIDTH
+    if channel_width is None:
+        channel_width = CHANNEL_WIDTH
+    channel_width = float(channel_width)
+    half_width = channel_width / 2.0
+    panel_width = (SCENE_SIZE - channel_width) / 2.0
+    z_center = panel_width / 2.0 + half_width
     half = np.array(
-        [WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, PANEL_WIDTH / 2.0], dtype=float
+        [WALL_THICKNESS / 2.0, WALL_HEIGHT / 2.0, panel_width / 2.0], dtype=float
     )
     return [
         (np.array([WALL_X, WALL_HEIGHT / 2.0, -z_center], dtype=float), half.copy()),
@@ -173,14 +180,16 @@ def _check_wall_collision(
     root_pos: np.ndarray,
     yaw_rad: float,
     hand_pos: Optional[np.ndarray] = None,
+    channel_width: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     """Check the robot body (and optionally the hand) against the wall panels.
 
     Returns None when there is no collision, otherwise a dict with the
     colliding part ("torso", "shoulder" or "hand") and a contact point.
     """
+    boxes = _panel_boxes(channel_width)
     body_center, body_half = _robot_body_aabb(root_pos, yaw_rad)
-    for panel_center, panel_half in _panel_boxes():
+    for panel_center, panel_half in boxes:
         if _aabb_overlap(body_center, body_half, panel_center, panel_half):
             point = np.clip(body_center, panel_center - panel_half, panel_center + panel_half)
             part = "shoulder" if body_center[1] > 1.2 else "torso"
@@ -191,7 +200,7 @@ def _check_wall_collision(
             }
     if hand_pos is not None:
         hand = np.asarray(hand_pos, dtype=float)
-        for panel_center, panel_half in _panel_boxes():
+        for panel_center, panel_half in boxes:
             if _aabb_overlap(hand, np.zeros(3), panel_center, panel_half + 0.03):
                 return {"part": "hand", "point": hand.tolist()}
     return None
@@ -250,6 +259,7 @@ class BAOEnv:
         self._reach_joint_indices: Optional[np.ndarray] = None
         self._robot_yaw = ROBOT_START_YAW_DEG
         self._robot_ground_offset = 0.0
+        self._channel_width = float(self.task_dict.get("channel_width", CHANNEL_WIDTH))
         self.reaching = False
 
         self._create_ground()
@@ -280,7 +290,9 @@ class BAOEnv:
         )
 
     def _create_wall(self) -> None:
-        z_center = PANEL_WIDTH / 2.0 + CHANNEL_HALF_WIDTH
+        channel_half = self._channel_width / 2.0
+        panel_width = (SCENE_SIZE - self._channel_width) / 2.0
+        z_center = panel_width / 2.0 + channel_half
         for i, sign in enumerate((-1.0, 1.0)):
             FixedCuboid(
                 prim_path=f"/World/WallPanel_{i}",
@@ -290,7 +302,7 @@ class BAOEnv:
                 ),
                 size=1.0,
                 scale=_user_to_isaac_scale(
-                    np.array([WALL_THICKNESS, WALL_HEIGHT, PANEL_WIDTH])
+                    np.array([WALL_THICKNESS, WALL_HEIGHT, panel_width])
                 ),
             )
             UsdGeom.Gprim(
@@ -306,7 +318,7 @@ class BAOEnv:
                 prim_path=f"/World/ChannelEdge_{edge_id}",
                 name=f"channel_edge_{edge_id}",
                 position=_user_to_isaac_pos(
-                    np.array([WALL_X, WALL_HEIGHT / 2.0, sign * CHANNEL_HALF_WIDTH])
+                    np.array([WALL_X, WALL_HEIGHT / 2.0, sign * channel_half])
                 ),
                 size=1.0,
                 scale=_user_to_isaac_scale(
@@ -320,6 +332,37 @@ class BAOEnv:
                 metallic=0.0,
                 roughness=0.4,
             )
+
+    def _remove_wall(self) -> None:
+        for path in (
+            "/World/WallPanel_0",
+            "/World/WallPanel_1",
+            "/World/ChannelEdge_0",
+            "/World/ChannelEdge_1",
+        ):
+            prim = self.stage.GetPrimAtPath(path)
+            if prim and prim.IsValid():
+                self.stage.RemovePrim(path)
+
+    def set_channel_width(self, width: float) -> float:
+        """Resize the wall channel and rebuild its visual/collision prims."""
+        width = float(width)
+        if not 0.1 <= width <= SCENE_SIZE - 0.1:
+            raise ValueError(f"channel width must be in [0.1, {SCENE_SIZE - 0.1}]")
+        if abs(width - self._channel_width) < 1e-9:
+            return self._channel_width
+        self._channel_width = width
+        try:
+            import omni.timeline
+
+            timeline = omni.timeline.get_timeline_interface()
+            if timeline.is_playing():
+                timeline.stop()
+        except Exception:
+            pass
+        self._remove_wall()
+        self._create_wall()
+        return self._channel_width
 
     def _create_target(self) -> None:
         prim_path = "/World/TargetBall"
@@ -1107,9 +1150,14 @@ class BAOEnv:
         """Return (stuck, collision_info) for torso attempts through the channel."""
         root = self._root_position()
         near_wall = abs(root[0] - WALL_X) <= ROBOT_TORSO_THICKNESS / 2.0 + MOVE_STEP + 0.05
-        at_channel = abs(root[2]) <= CHANNEL_HALF_WIDTH + 0.30
+        at_channel = abs(root[2]) <= self._channel_width / 2.0 + 0.30
         probe = root + np.array([MOVE_STEP, 0.0, 0.0])
-        collision = _check_wall_collision(probe, np.radians(self._robot_yaw), hand_pos=None)
+        collision = _check_wall_collision(
+            probe,
+            np.radians(self._robot_yaw),
+            hand_pos=None,
+            channel_width=self._channel_width,
+        )
         stuck = bool(near_wall and at_channel and collision is not None)
         return stuck, collision
 
@@ -1119,7 +1167,12 @@ class BAOEnv:
     def _get_wall_collision_info(self) -> Optional[Dict[str, Any]]:
         root = self._root_position()
         hand = self.get_hand_position()
-        return _check_wall_collision(root, np.radians(self._robot_yaw), hand_pos=hand)
+        return _check_wall_collision(
+            root,
+            np.radians(self._robot_yaw),
+            hand_pos=hand,
+            channel_width=self._channel_width,
+        )
 
     def check_collision_with_wall(self) -> bool:
         """Return True when the robot is currently colliding with a panel."""
@@ -1186,7 +1239,12 @@ class BAOEnv:
             }[action]
             target = root + world_delta
             yaw = np.radians(self._robot_yaw)
-            collision = _check_wall_collision(target, yaw, hand_pos=None)
+            collision = _check_wall_collision(
+                target,
+                yaw,
+                hand_pos=None,
+                channel_width=self._channel_width,
+            )
             if collision is not None:
                 return False, f"blocked by transparent wall ({collision['part']})", collision
             self._set_robot_pose(target, self._robot_yaw)
@@ -1196,7 +1254,12 @@ class BAOEnv:
             new_yaw = self._robot_yaw + (
                 TURN_STEP_DEG if action == "turn_left" else -TURN_STEP_DEG
             )
-            collision = _check_wall_collision(root, np.radians(new_yaw), hand_pos=None)
+            collision = _check_wall_collision(
+                root,
+                np.radians(new_yaw),
+                hand_pos=None,
+                channel_width=self._channel_width,
+            )
             if collision is not None:
                 return False, "cannot turn: body would collide with transparent wall", collision
             self._set_robot_pose(root, new_yaw)

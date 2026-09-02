@@ -102,6 +102,12 @@ All levels:
 %ISAACSIM_ROOT%\python.bat main.py --model gemini-2.5-pro --all-levels --headless
 ```
 
+Level 4 channel-widening experiment:
+
+```text
+%ISAACSIM_ROOT%\python.bat main.py --model gpt-4o --level 4 --headless
+```
+
 Batch evaluation:
 
 - Windows: `evaluate.bat MODEL_NAME [EPISODES]`
@@ -186,7 +192,8 @@ Outputs:
   `get_robot_state()`, `get_hand_position()`, `get_distance_to_target()`,
   `get_torso_rotation()`, `check_success()` (< 3cm),
   `execute_action(action)`, `check_collision_with_wall()` (bool),
-  `get_collision_position()`.
+  `get_collision_position()`, and `set_channel_width(width)` for Level 4
+  dynamic channel experiments.
 - `execute_action` returns `StepResult(rgb, legal, feedback, distance,
   success, collision, state)`. `legal=False` means the action was blocked
   by the transparent wall.
@@ -206,6 +213,10 @@ Outputs:
   channel information.
 - Level 3 (self-referential body adjustment): generic task only, no wall,
   channel, or target-behind-wall prior.
+- Level 4 (channel-widening memory): phase A uses the full Level 0 guidance
+  with a 0.38m channel, then phase B silently widens the channel to 0.60m
+  and only asks the agent to reach the ball. The session agent and history
+  are not reset between phases.
 - Each level runs `--rounds x --episodes` episodes (default 3 rounds x 50).
   Each episode has at most 30 steps and ends only on success or step
   exhaustion; wall collisions are recorded but do not terminate.

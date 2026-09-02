@@ -113,14 +113,78 @@ LEVEL_PROMPTS: Dict[int, str] = {
     3: "Your task is to reach the green ball in front of you.",
 }
 
+LEVEL4_PHASE_B_PROMPT = "Your task is to reach the green ball in front of you."
+
+
+def _recently_blocked(history: Optional[Sequence[Dict[str, str]]]) -> bool:
+    if not history:
+        return False
+    return any(
+        "blocked" in str(item.get("feedback", "")).lower()
+        for item in list(history)[-3:]
+    )
+
+
 def build_prompt(
     level: int,
     state: Dict[str, Any],
     history: Optional[Sequence[Dict[str, str]]] = None,
     options: str = ACTION_OPTIONS_STRING,
     max_steps: int = 30,
+    phase: Optional[str] = None,
+    session_memory: Optional[Sequence[str]] = None,
 ) -> str:
     """Build the per-level prompt text for one decision step."""
+    if level == 4:
+        parts = [
+            LEVEL0_FULL_PROMPT if phase == "A" else LEVEL4_PHASE_B_PROMPT
+        ]
+        if session_memory:
+            parts.append("Previous completed episodes:\n" + "\n".join(session_memory))
+        if history:
+            lines = ["Action history (most recent first):"]
+            for item in list(history)[-12:][::-1]:
+                lines.append(f"- {item.get('action')} -> {item.get('feedback')}")
+            parts.append("\n".join(lines))
+        if _recently_blocked(history):
+            parts.append(
+                "Recovery: The last action was blocked by the transparent wall. "
+                "Do not repeat it. Stop pushing forward; turn left/right or "
+                "move backward first."
+            )
+        position = state.get("position", [0.0, 0.0, 0.0])
+        yaw = float(
+            state.get(
+                "torso_rotation",
+                state.get("orientation", {}).get("yaw", 0.0),
+            )
+        )
+        distance = float(state.get("distance_to_target", float("nan")))
+        parts.append(
+            "\n".join(
+                [
+                    "Current state:",
+                    f"- position (x, y, z): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]",
+                    f"- torso yaw (degrees): {yaw:.1f}",
+                    f"- distance to green ball surface: {distance:.3f} m",
+                    f"You have at most {max_steps} steps in this episode.",
+                ]
+            )
+        )
+        if phase != "A":
+            parts.extend(
+                [
+                    "Available actions:",
+                    options,
+                    (
+                        'Reply with exactly one JSON object: '
+                        '{"action": "<action>", "confidence": 0.0-1.0, '
+                        '"reasoning": "<short text>"}.'
+                    ),
+                ]
+            )
+        return "\n\n".join(parts)
+
     if level == 0:
         parts = [LEVEL_PROMPTS[0]]
         if history:
@@ -128,6 +192,12 @@ def build_prompt(
             for item in list(history)[-6:][::-1]:
                 lines.append(f"- {item.get('action')} -> {item.get('feedback')}")
             parts.append("\n".join(lines))
+        if _recently_blocked(history):
+            parts.append(
+                "Recovery: The last action was blocked by the transparent wall. "
+                "Do not repeat it. Stop pushing forward; turn left/right or "
+                "move backward first."
+            )
         position = state.get("position", [0.0, 0.0, 0.0])
         yaw = float(
             state.get(
@@ -390,19 +460,184 @@ class BAOExperimentRunner:
             self._save_summary(level, round_id, round_episodes)
         return all_episodes
 
+    def run_level_4(
+        self,
+        round_id: int = 0,
+        phase_a_initial: int = 10,
+        phase_a_max: int = 20,
+        phase_b_episodes: int = 20,
+        progress_callback: Optional[
+            Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
+        ] = None,
+    ) -> List[Dict[str, Any]]:
+        """Run Level 4: guided narrow phase A, then widened phase B.
+
+        Phase A and phase B reuse one AgentAdapter and one shared history so
+        the model's context is not reset at the phase boundary.
+        """
+        self.env.set_channel_width(0.38)
+        agent_log = os.path.join(
+            self.log_dir, f"round{round_id}_level4_session_agent.txt"
+        )
+        agent = AgentAdapter(model=self.model, log_file=agent_log)
+        shared_history: List[Dict[str, str]] = []
+        session_memory: List[str] = []
+        all_episodes: List[Dict[str, Any]] = []
+        phase_episodes: Dict[str, List[Dict[str, Any]]] = {"A": [], "B": []}
+        total = int(phase_a_max) + int(phase_b_episodes)
+        completed = 0
+
+        def run_one(phase: str, channel_width: float) -> Dict[str, Any]:
+            nonlocal completed
+            episode_id = len(all_episodes)
+            episode_result = self._run_episode(
+                level=4,
+                episode_id=episode_id,
+                round_id=round_id,
+                phase=phase,
+                channel_width=channel_width,
+                agent=agent,
+                shared_history=shared_history,
+                session_memory=session_memory,
+            )
+            episode_result["sideways_rate"] = self._compute_sideways_rate(
+                episode_result["steps"]
+            )
+            all_episodes.append(episode_result)
+            phase_episodes[phase].append(episode_result)
+            self._save_episode(episode_result)
+            completed += 1
+            print(
+                f"[level 4 {phase}] episode {episode_id + 1}: "
+                f"success={episode_result['success']} "
+                f"sideways_rate={episode_result['sideways_rate']:.3f} "
+                f"steps={len(episode_result['steps'])}"
+            )
+            if progress_callback is not None:
+                progress_callback(
+                    completed,
+                    total,
+                    episode_result,
+                    all_episodes,
+                )
+            session_memory.append(
+                f"Episode {episode_id}: success={episode_result['success']}, "
+                f"steps={len(episode_result['steps'])}, "
+                f"max_side_rotation={self._max_abs_yaw(episode_result['steps']):.0f} deg"
+            )
+            return episode_result
+
+        for _ in range(int(phase_a_initial)):
+            run_one("A", 0.38)
+        phase_a = phase_episodes["A"]
+        if len(phase_a) >= 5:
+            last5 = [e["success"] for e in phase_a[-5:]]
+            phase_a_passed = float(np.mean(last5)) >= 0.8
+        else:
+            phase_a_passed = False
+        if not phase_a_passed:
+            print("[level 4 A] last-5 criterion not met; extending phase A to 20")
+            for _ in range(int(phase_a_initial), int(phase_a_max)):
+                run_one("A", 0.38)
+
+        self._save_level4_phase_summary(
+            "A", round_id, phase_episodes["A"], 0.38
+        )
+        print("[level 4] switching channel width from 0.38 to 0.60")
+        self.env.set_channel_width(0.60)
+        for _ in range(int(phase_b_episodes)):
+            run_one("B", 0.60)
+
+        self._save_level4_phase_summary(
+            "B", round_id, phase_episodes["B"], 0.60
+        )
+        return all_episodes
+
+    @staticmethod
+    def _compute_sideways_rate(steps: Sequence[Dict[str, Any]]) -> float:
+        if not steps:
+            return 0.0
+        side_steps = 0
+        for step in steps:
+            yaw = abs(float(step.get("torso_rotation", 0.0)))
+            if 45.0 <= yaw <= 135.0:
+                side_steps += 1
+        return float(side_steps / len(steps))
+
+    @staticmethod
+    def _max_abs_yaw(steps: Sequence[Dict[str, Any]]) -> float:
+        if not steps:
+            return 0.0
+        return float(
+            max(abs(float(step.get("torso_rotation", 0.0))) for step in steps)
+        )
+
+    def _save_level4_phase_summary(
+        self,
+        phase: str,
+        round_id: int,
+        episodes: List[Dict[str, Any]],
+        channel_width: float,
+    ) -> None:
+        path = os.path.join(
+            self._result_dir(4, round_id),
+            f"summary_phase{phase}_{self.tag}.json",
+        )
+        summary = {
+            "level": 4,
+            "phase": phase,
+            "channel_width": channel_width,
+            "model_name": self.model,
+            "episodes": len(episodes),
+            "success_rate": (
+                float(np.mean([e["success"] for e in episodes]))
+                if episodes
+                else 0.0
+            ),
+            "avg_sideways_rate": (
+                float(np.mean([e["sideways_rate"] for e in episodes]))
+                if episodes
+                else 0.0
+            ),
+            "end_reason_counts": dict(
+                Counter(e["end_reason"] for e in episodes)
+            ),
+        }
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(summary, handle, indent=2, ensure_ascii=False)
+
     # ------------------------------------------------------------------
     # Single episode
     # ------------------------------------------------------------------
 
-    def _run_episode(self, level: int, episode_id: int, round_id: int = 0) -> Dict[str, Any]:
-        agent_log = os.path.join(
-            self.log_dir,
-            f"round{round_id}_level{level}_episode{episode_id:03d}_agent.txt",
+    def _run_episode(
+        self,
+        level: int,
+        episode_id: int,
+        round_id: int = 0,
+        phase: Optional[str] = None,
+        channel_width: Optional[float] = None,
+        agent: Optional[AgentAdapter] = None,
+        shared_history: Optional[List[Dict[str, str]]] = None,
+        session_memory: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        if agent is None:
+            agent_log = os.path.join(
+                self.log_dir,
+                f"round{round_id}_level{level}_episode{episode_id:03d}_agent.txt",
+            )
+            agent = AgentAdapter(model=self.model, log_file=agent_log)
+        if shared_history is not None:
+            agent.history = shared_history
+        history: List[Dict[str, str]] = (
+            shared_history
+            if shared_history is not None
+            else list(agent.history)
+            if agent is not None
+            else []
         )
-        agent = AgentAdapter(model=self.model, log_file=agent_log)
 
         _, distance = self.env.reset_scene()
-        history: List[Dict[str, str]] = []
         image_history: List[np.ndarray] = []
         steps: List[Dict[str, Any]] = []
         action_sequence: List[str] = []
@@ -422,6 +657,8 @@ class BAOExperimentRunner:
                 history=history,
                 options=ACTION_OPTIONS_STRING,
                 max_steps=self.max_steps,
+                phase=phase,
+                session_memory=session_memory,
             )
             action_name, raw_response, latency_ms = agent.query(prompt, rgb, state)
             total_llm_time_ms += latency_ms
@@ -461,6 +698,8 @@ class BAOExperimentRunner:
                 "level": level,
                 "model_name": self.model,
                 "round": round_id,
+                "phase": phase,
+                "channel_width": channel_width,
                 "step": step,
                 "action": action_taken,
                 "hand_x": float(hand_pos[0]) if len(hand_pos) > 0 else None,
@@ -502,6 +741,8 @@ class BAOExperimentRunner:
             "level": level,
             "model_name": self.model,
             "round": round_id,
+            "phase": phase,
+            "channel_width": channel_width,
             "success": success,
             "total_steps": len(steps),
             "action_sequence": ",".join(action_sequence),
@@ -628,11 +869,14 @@ def main() -> None:
         )
         runner.save_args(args)
         for level in args.levels:
-            episodes = runner.run_level(
-                level=level,
-                episodes=args.episodes,
-                rounds=args.rounds,
-            )
+            if level == 4:
+                episodes = runner.run_level_4()
+            else:
+                episodes = runner.run_level(
+                    level=level,
+                    episodes=args.episodes,
+                    rounds=args.rounds,
+                )
             summary = BAOExperimentRunner._summarize(level, episodes)
             print(
                 f"[level {level}] success_rate={summary['success_rate']:.3f} "

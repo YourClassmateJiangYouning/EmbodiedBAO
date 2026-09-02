@@ -12,6 +12,7 @@ from environment import (
     HAND_LOCAL_REST,
     MOVE_STEP,
     ROBOT_START_POS,
+    _check_wall_collision,
     _isaac_to_user_pos,
     _user_to_isaac_pos,
 )
@@ -37,6 +38,7 @@ def _make_env() -> BAOEnv:
     env.robot_root = _FakeRoot()
     env._robot_ground_offset = GROUND_OFFSET
     env._robot_yaw = 0.0
+    env._channel_width = 0.38
     env._articulation_ok = False
     env.hand_xform = None
     env.reaching = False
@@ -88,6 +90,15 @@ class CoordinateRegressionTest(unittest.TestCase):
         point = env.get_collision_position()
         self.assertIsNotNone(point)
         self.assertEqual(len(point), 3)
+
+    def test_channel_width_changes_analytic_collision(self) -> None:
+        root = np.array([1.95, 0.0, 0.0], dtype=float)
+        self.assertIsNotNone(
+            _check_wall_collision(root, 0.0, channel_width=0.38)
+        )
+        self.assertIsNone(
+            _check_wall_collision(root, 0.0, channel_width=0.60)
+        )
 
     def test_analytic_hand_heights_are_ground_relative(self) -> None:
         env = _make_env()
