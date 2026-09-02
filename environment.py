@@ -1008,7 +1008,7 @@ class BAOEnv:
         root = self._root_position()
         forward = _forward_vector(np.radians(self._robot_yaw))
         height = float(self.task_dict.get("camera_height", TARGET_POS[1]))
-        offset = float(self.task_dict.get("eye_forward_offset", 0.45))
+        offset = float(self.task_dict.get("eye_forward_offset", 0.3))
         return np.array([root[0], height, root[2]], dtype=float) + forward * offset
 
     # ------------------------------------------------------------------
