@@ -980,6 +980,7 @@ class BAOEnv:
 
     def _head_camera_position(self) -> np.ndarray:
         """World position of the H1 head camera lens in the user frame."""
+        candidates: List[np.ndarray] = []
         if self.head_visual_path:
             try:
                 from pxr import Usd, UsdGeom
@@ -1000,14 +1001,18 @@ class BAOEnv:
                             [(lo[i] + hi[i]) / 2.0 for i in range(3)],
                             dtype=float,
                         )
-                        return _isaac_to_user_pos(center)
+                        candidates.append(_isaac_to_user_pos(center))
             except Exception:
                 pass
         if self.head_xform is not None:
             head_isaac = self.head_xform.get_world_poses()[0][0]
-            return _isaac_to_user_pos(np.asarray(head_isaac, dtype=float))
+            candidates.append(_isaac_to_user_pos(np.asarray(head_isaac, dtype=float)))
+        for candidate in candidates:
+            if candidate[1] >= 1.2:
+                return candidate
         root = self._root_position()
-        return np.array([root[0], ROBOT_HEAD_HEIGHT, root[2]], dtype=float)
+        forward = _forward_vector(np.radians(self._robot_yaw))
+        return np.array([root[0], ROBOT_HEAD_HEIGHT, root[2]], dtype=float) + forward * 0.3
 
     # ------------------------------------------------------------------
     # Public environment interface
@@ -1021,13 +1026,13 @@ class BAOEnv:
             self.eye_camera.initialize()
         self._init_robot_controller()
         self._set_robot_pose(ROBOT_START_POS, ROBOT_START_YAW_DEG)
-        self._set_standing_joint_targets()
         self.reaching = False
         if self._articulation is not None:
             try:
                 self._articulation.post_reset()
             except Exception:
                 pass
+        self._set_standing_joint_targets()
         self._update_camera()
         self._update_eye_camera()
         for _ in range(int(self.task_dict.get("reset_steps", 30))):
