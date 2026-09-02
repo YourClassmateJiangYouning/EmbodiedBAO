@@ -133,7 +133,7 @@ def encode_image(image: Any) -> str:
     else:
         image = Image.fromarray(image)
     buffer = io.BytesIO()
-    image.save(buffer, format="JPEG")
+    image.save(buffer, format="JPEG", quality=95)
     data = base64.b64encode(buffer.getvalue()).decode("utf-8")
     return f"data:image/jpeg;base64,{data}"
 

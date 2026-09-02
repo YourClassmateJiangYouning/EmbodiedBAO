@@ -225,7 +225,7 @@ class BAOEnv:
             "/rtx/rendermode",
             str(self.task_dict.get("rendermode", "RaytracedLighting")),
         )
-        settings.set("/rtx/pathtracing/spp", int(self.task_dict.get("spp", 16)))
+        settings.set("/rtx/pathtracing/spp", int(self.task_dict.get("spp", 32)))
 
         self.world = World(stage_units_in_meters=1.0)
         self.stage = self.world.stage
