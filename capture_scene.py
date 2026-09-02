@@ -77,14 +77,20 @@ def main() -> int:
             except Exception:
                 pass
         print("stage_up_axis:", env.world.stage.GetMetadata("upAxis"))
-        print("robot_root_pose:", env.robot_root.get_world_poses())
+        try:
+            print("robot_root_pose:", env.robot_root.get_world_poses())
+        except Exception as exc:
+            print("robot_root_pose: unavailable:", exc)
         for link_name in ("torso_link", "right_ankle_link"):
             prim = env.world.stage.GetPrimAtPath(f"/World/H1/{link_name}")
             if prim and prim.IsValid():
-                print(
-                    f"{link_name}_world_bbox:",
-                    bbox_cache.ComputeWorldBound(prim).ComputeAlignedRange(),
-                )
+                try:
+                    print(
+                        f"{link_name}_world_bbox:",
+                        bbox_cache.ComputeWorldBound(prim).ComputeAlignedRange(),
+                    )
+                except Exception as exc:
+                    print(f"{link_name}_world_bbox: unavailable:", exc)
         cam_prim = env.world.stage.GetPrimAtPath("/World/Camera")
         print(
             "camera_matrix:",
