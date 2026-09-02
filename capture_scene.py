@@ -15,6 +15,8 @@ import argparse
 import json
 import math
 import os
+import sys
+import traceback
 
 from isaacsim import SimulationApp
 
@@ -26,6 +28,10 @@ def main() -> int:
     parser.add_argument("--env_config", type=str, default="{}")
     parser.add_argument("--hide_robot", action="store_true", help="Hide the robot mesh")
     args = parser.parse_args()
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
 
     simulation_app = SimulationApp({"headless": args.headless})
     try:
@@ -43,6 +49,12 @@ def main() -> int:
 
         bbox_cache = UsdGeom.BBoxCache(
             Usd.TimeCode.Default(), [UsdGeom.Tokens.default_]
+        )
+        Image.fromarray(rgb).save(args.output)
+        print(
+            f"saved_initial: {os.path.abspath(args.output)} "
+            f"brightness={float(rgb.mean()):.1f} std={float(rgb.std()):.1f} "
+            f"center={rgb[rgb.shape[0] // 2, rgb.shape[1] // 2].tolist()}"
         )
         print("articulation_ok:", env._articulation_ok)
         if getattr(env, "_articulation_error", ""):
@@ -106,12 +118,6 @@ def main() -> int:
                     Usd.TimeCode.Default()
                 ),
             )
-        Image.fromarray(rgb).save(args.output)
-        print(
-            f"saved: {os.path.abspath(args.output)} "
-            f"brightness={float(rgb.mean()):.1f} std={float(rgb.std()):.1f} "
-            f"center={rgb[rgb.shape[0] // 2, rgb.shape[1] // 2].tolist()}"
-        )
 
         views = {
             "scene_third.png": ([1.0, -4.5, 2.2], [2.4, 0.0, 1.2], [0.0, 0.0, 1.0]),
@@ -151,6 +157,9 @@ def main() -> int:
             except Exception as exc:
                 print(f"failed to save {name}: {exc}")
         print("all views done")
+    except Exception:
+        traceback.print_exc()
+        raise
     finally:
         if "env" in locals():
             env.close()
