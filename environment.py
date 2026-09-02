@@ -61,7 +61,7 @@ PANEL_WIDTH = (SCENE_SIZE - CHANNEL_WIDTH) / 2.0  # 1.81 m per panel
 ROBOT_START_POS = np.array([1.5, 0.0, 0.0], dtype=float)
 ROBOT_START_YAW_DEG = 0.0
 
-TARGET_POS = np.array([2.4, 1.737, 0.0], dtype=float)
+TARGET_POS = np.array([2.4, 1.2, 0.0], dtype=float)
 TARGET_RADIUS = 0.04  # 8 cm diameter
 SUCCESS_DISTANCE = 0.03
 
@@ -81,7 +81,7 @@ ARM_HANG_ELBOW_PITCH_RAD = 1.57
 
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
 HAND_LOCAL_REST = np.array([0.10, 0.95, 0.24], dtype=float)
-HAND_LOCAL_REACH = np.array([0.44, 1.73, 0.24], dtype=float)  # +34 cm forward
+HAND_LOCAL_REACH = np.array([0.44, 1.20, 0.24], dtype=float)  # +34 cm forward
 
 REACH_SHOULDER_PITCH_RAD = -1.35
 REACH_ELBOW_PITCH_RAD = 0.0
@@ -1007,8 +1007,8 @@ class BAOEnv:
         """Robot eye anchor: on the body, at the green ball height."""
         root = self._root_position()
         forward = _forward_vector(np.radians(self._robot_yaw))
-        height = float(self.task_dict.get("camera_height", TARGET_POS[1]))
-        offset = float(self.task_dict.get("eye_forward_offset", 0.3))
+        height = float(self.task_dict.get("camera_height", 2.2))
+        offset = float(self.task_dict.get("eye_forward_offset", 0.0))
         return np.array([root[0], height, root[2]], dtype=float) + forward * offset
 
     # ------------------------------------------------------------------
