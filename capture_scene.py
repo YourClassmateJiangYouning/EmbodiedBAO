@@ -44,6 +44,9 @@ def main() -> int:
         print("articulation_ok:", env._articulation_ok)
         if getattr(env, "_articulation_error", ""):
             print("articulation_error:", env._articulation_error)
+        print("hide_robot_config:", task_dict.get("hide_robot", False))
+        h1_prim = env.world.stage.GetPrimAtPath("/World/H1")
+        print("H1_active:", h1_prim.IsActive() if h1_prim and h1_prim.IsValid() else "missing")
         print("head_camera_position:", env._head_camera_position().tolist())
         print("head_candidates:")
         for prim in env.world.stage.Traverse():

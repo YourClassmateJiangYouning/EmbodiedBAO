@@ -1016,6 +1016,13 @@ class BAOEnv:
     def reset_scene(self) -> Tuple[np.ndarray, float]:
         """Reset the robot and target, then return (rgb, distance)."""
         self.world.reset()
+        if self.task_dict.get("hide_robot", False):
+            for sub_prim in self.stage.Traverse():
+                if str(sub_prim.GetPath()).startswith(self.robot_prim_path):
+                    try:
+                        sub_prim.SetActive(False)
+                    except Exception:
+                        pass
         self.camera.initialize()
         if self.eye_camera is not None:
             self.eye_camera.initialize()
