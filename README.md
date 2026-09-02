@@ -37,6 +37,8 @@ BAO task?
 4. `ai_agent.py` - unified MLLM interface.
 5. `analysis.py` - Step-ness, strategy switching, exploratory behavior, and
    one-shot adjustment metrics.
+6. `run_models_smoke.py` - one quick episode per supported MLLM using a
+   single Isaac Sim session.
 
 ## Installation
 
@@ -104,6 +106,13 @@ Batch evaluation:
 
 - Windows: `evaluate.bat MODEL_NAME [EPISODES]`
 - Linux: `./evaluate.sh MODEL_NAME [EPISODES]`
+
+All-model smoke test:
+
+```text
+$ISAACSIM_ROOT/python.sh run_models_smoke.py --headless \
+    --env_config '{"robot_physics":true}'
+```
 
 Analysis:
 
