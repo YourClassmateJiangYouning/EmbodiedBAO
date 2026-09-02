@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 
 from isaacsim import SimulationApp
@@ -39,6 +40,31 @@ def main() -> int:
         if getattr(env, "_articulation_error", ""):
             print("articulation_error:", env._articulation_error)
         print("head_camera_position:", env._head_camera_position().tolist())
+        print("head_candidates:")
+        for prim in env.world.stage.Traverse():
+            path = str(prim.GetPath())
+            if not path.startswith("/World/H1"):
+                continue
+            name = prim.GetName().lower()
+            if not any(key in name for key in ("head", "d435", "mid360", "torso")):
+                continue
+            try:
+                rng = bbox_cache.ComputeWorldBound(prim).ComputeAlignedRange()
+                lo = rng.GetMin()
+                hi = rng.GetMax()
+                if all(
+                    math.isfinite(v)
+                    for v in (lo[0], lo[1], lo[2], hi[0], hi[1], hi[2])
+                ):
+                    center = [(lo[i] + hi[i]) / 2.0 for i in range(3)]
+                    center_user = [center[0], center[2], center[1]]
+                    print(
+                        path,
+                        "center_user=",
+                        [round(float(v), 3) for v in center_user],
+                    )
+            except Exception:
+                pass
         print("stage_up_axis:", env.world.stage.GetMetadata("upAxis"))
         print("robot_root_pose:", env.robot_root.get_world_poses())
         from pxr import Usd, UsdGeom
