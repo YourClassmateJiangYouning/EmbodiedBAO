@@ -24,6 +24,7 @@ def main() -> int:
     parser.add_argument("--output", type=str, default="scene_initial.png")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--env_config", type=str, default="{}")
+    parser.add_argument("--hide_robot", action="store_true", help="Hide the robot mesh")
     args = parser.parse_args()
 
     simulation_app = SimulationApp({"headless": args.headless})
@@ -34,6 +35,8 @@ def main() -> int:
         import environment
         task_dict = json.loads(args.env_config)
         task_dict["headless"] = args.headless
+        if args.hide_robot:
+            task_dict["hide_robot"] = True
         env = environment.setup_scene(simulation_app, task_dict=task_dict)
         rgb, _ = env.reset_scene()
         from pxr import Usd, UsdGeom
