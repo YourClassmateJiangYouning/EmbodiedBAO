@@ -87,8 +87,8 @@ A green ball is located behind the wall at x=2.4m, z=0, height 1.2m. Reach the g
 
 【Complete Solution - Follow These Steps】
 Step 1: Move forward until you reach the wall edge
-Step 2: Reach toward the green ball. If it is still out of reach, retreat and lower your arm
-Step 3: Turn your body sideways (rotate 90 degrees left or right)
+Step 2: Reach toward the green ball at least once. If it is still out of reach, retreat and lower your arm
+Step 3: Back away from the wall if needed, then turn your body sideways (rotate 90 degrees left or right)
 Step 4: Move forward through the opening while staying sideways
 Step 5: Reach toward the green ball again
 
