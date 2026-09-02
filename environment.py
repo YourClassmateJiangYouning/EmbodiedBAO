@@ -76,7 +76,7 @@ ROBOT_BODY_HALF_HEIGHT = 0.9
 ROBOT_HEAD_HEIGHT = 1.55
 ARM_REACH = 0.34
 MODEL_YAW_OFFSET_DEG = 0.0
-ARM_HANG_SHOULDER_PITCH_RAD = -1.57
+ARM_HANG_SHOULDER_PITCH_RAD = 1.57
 ARM_HANG_ELBOW_PITCH_RAD = 0.0
 
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
