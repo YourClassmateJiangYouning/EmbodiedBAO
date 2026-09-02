@@ -61,7 +61,7 @@ PANEL_WIDTH = (SCENE_SIZE - CHANNEL_WIDTH) / 2.0  # 1.81 m per panel
 ROBOT_START_POS = np.array([1.5, 0.0, 0.0], dtype=float)
 ROBOT_START_YAW_DEG = 0.0
 
-TARGET_POS = np.array([2.4, 1.2, 0.0], dtype=float)
+TARGET_POS = np.array([2.4, 1.737, 0.0], dtype=float)
 TARGET_RADIUS = 0.04  # 8 cm diameter
 SUCCESS_DISTANCE = 0.03
 
@@ -81,7 +81,7 @@ ARM_HANG_ELBOW_PITCH_RAD = 1.57
 
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
 HAND_LOCAL_REST = np.array([0.10, 0.95, 0.24], dtype=float)
-HAND_LOCAL_REACH = np.array([0.44, 1.20, 0.24], dtype=float)  # +34 cm forward
+HAND_LOCAL_REACH = np.array([0.44, 1.73, 0.24], dtype=float)  # +34 cm forward
 
 REACH_SHOULDER_PITCH_RAD = -1.35
 REACH_ELBOW_PITCH_RAD = 0.0
@@ -966,13 +966,11 @@ class BAOEnv:
             )
 
     def _update_eye_camera(self) -> None:
-        """Aim the robot eye camera from the H1 head d435 mounting point."""
+        """Aim the robot eye camera from the robot body at ball height."""
         if self.eye_camera is None:
             return
         head = self._head_camera_position()
-        forward = _forward_vector(np.radians(self._robot_yaw))
-        offset = float(self.task_dict.get("eye_forward_offset", 0.12))
-        eye = head + forward * offset
+        eye = head
         target = np.asarray(TARGET_POS, dtype=float).copy()
         eye_isaac = _user_to_isaac_pos(eye)
         target_isaac = _user_to_isaac_pos(target)
@@ -991,40 +989,12 @@ class BAOEnv:
             )
 
     def _head_camera_position(self) -> np.ndarray:
-        """World position of the H1 head camera lens in the user frame."""
-        candidates: List[np.ndarray] = []
-        if self.head_visual_path:
-            try:
-                from pxr import Usd, UsdGeom
-
-                prim = self.stage.GetPrimAtPath(self.head_visual_path)
-                if prim and prim.IsValid():
-                    cache = UsdGeom.BBoxCache(
-                        Usd.TimeCode.Default(), [UsdGeom.Tokens.default_]
-                    )
-                    rng = cache.ComputeWorldBound(prim).ComputeAlignedRange()
-                    lo = rng.GetMin()
-                    hi = rng.GetMax()
-                    if all(
-                        math.isfinite(v)
-                        for v in (lo[0], lo[1], lo[2], hi[0], hi[1], hi[2])
-                    ):
-                        center = np.array(
-                            [(lo[i] + hi[i]) / 2.0 for i in range(3)],
-                            dtype=float,
-                        )
-                        candidates.append(_isaac_to_user_pos(center))
-            except Exception:
-                pass
-        if self.head_xform is not None:
-            head_isaac = self.head_xform.get_world_poses()[0][0]
-            candidates.append(_isaac_to_user_pos(np.asarray(head_isaac, dtype=float)))
-        for candidate in candidates:
-            if candidate[1] >= 1.2:
-                return candidate
+        """Robot eye anchor: on the body, at the green ball height."""
         root = self._root_position()
         forward = _forward_vector(np.radians(self._robot_yaw))
-        return np.array([root[0], ROBOT_HEAD_HEIGHT, root[2]], dtype=float) + forward * 0.3
+        height = float(self.task_dict.get("camera_height", TARGET_POS[1]))
+        offset = float(self.task_dict.get("eye_forward_offset", 0.12))
+        return np.array([root[0], height, root[2]], dtype=float) + forward * offset
 
     # ------------------------------------------------------------------
     # Public environment interface
