@@ -42,6 +42,8 @@ def _make_env() -> BAOEnv:
     env._articulation_ok = False
     env.hand_xform = None
     env.reaching = False
+    env.raised_arm = None
+    env._camera_yaw_offset = 0.0
     return env
 
 
@@ -127,6 +129,30 @@ class CoordinateRegressionTest(unittest.TestCase):
         self.assertAlmostEqual(float(hand[0]), 2.20)
         self.assertAlmostEqual(float(hand[1]), 1.20)
         self.assertAlmostEqual(float(hand[2]), -0.44)
+
+    def test_side_arm_can_touch_ball_while_sideways(self) -> None:
+        env = _make_env()
+        env._set_robot_pose(np.array([1.96, 0.0, 0.0]), 90.0)
+        env._apply_action("raise_right_arm")
+        hand = env.get_hand_position()
+        self.assertAlmostEqual(float(hand[0]), 2.40)
+        self.assertAlmostEqual(float(hand[1]), 1.20)
+        self.assertAlmostEqual(float(hand[2]), 0.0)
+        self.assertTrue(env.check_success())
+
+        env._set_robot_pose(np.array([1.96, 0.0, 0.0]), -90.0)
+        env._apply_action("raise_left_arm")
+        hand = env.get_hand_position()
+        self.assertAlmostEqual(float(hand[0]), 2.40)
+        self.assertAlmostEqual(float(hand[2]), 0.0)
+        self.assertTrue(env.check_success())
+
+    def test_camera_look_actions_change_yaw_offset(self) -> None:
+        env = _make_env()
+        env._apply_action("look_left")
+        self.assertAlmostEqual(env._camera_yaw_offset, 30.0)
+        env._apply_action("look_right")
+        self.assertAlmostEqual(env._camera_yaw_offset, 0.0)
 
 
 if __name__ == "__main__":

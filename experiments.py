@@ -57,6 +57,10 @@ ACTION_DESCRIPTIONS: Dict[str, str] = {
     "turn_right": "rotate the torso 15 degrees clockwise around +y",
     "reach": "extend the right arm forward",
     "retreat": "pull the right arm back",
+    "look_left": "rotate the robot camera 30 degrees to the left",
+    "look_right": "rotate the robot camera 30 degrees to the right",
+    "raise_left_arm": "raise the whole left arm straight out to the left side",
+    "raise_right_arm": "raise the whole right arm straight out to the right side",
 }
 
 ACTION_OPTIONS_STRING: str = "\n".join(
@@ -90,7 +94,7 @@ Step 1: Move forward until you reach the wall edge
 Step 2: Reach forward once. If it is still out of reach, retreat and lower your arm
 Step 3: Back away from the wall if needed, then turn your body sideways (rotate 90 degrees left or right)
 Step 4: Side-step through the opening while staying sideways
-Step 5: Once through the wall, turn to face the ball and reach forward
+Step 5: While sideways in the opening, raise the whole arm on the side closest to the green ball straight out to the side and touch it
 
 【Available Actions】
 You must respond with a JSON object containing one action:
@@ -101,7 +105,11 @@ You must respond with a JSON object containing one action:
 {"action": "turn_left"} - rotate body 15 degrees counterclockwise
 {"action": "turn_right"} - rotate body 15 degrees clockwise
 {"action": "reach"}    - extend arm forward
-{"action": "retreat"}  - retract arm back"""
+{"action": "retreat"}  - retract arm back
+{"action": "look_left"} - rotate camera 30 degrees left
+{"action": "look_right"} - rotate camera 30 degrees right
+{"action": "raise_left_arm"} - raise whole left arm straight out to left
+{"action": "raise_right_arm"} - raise whole right arm straight out to right"""
 
 LEVEL_PROMPTS: Dict[int, str] = {
     0: LEVEL0_FULL_PROMPT,
@@ -159,6 +167,8 @@ def build_prompt(
                 state.get("orientation", {}).get("yaw", 0.0),
             )
         )
+        camera_yaw = float(state.get("camera_yaw", 0.0))
+        raised_arm = str(state.get("raised_arm", "none"))
         distance = float(state.get("distance_to_target", float("nan")))
         parts.append(
             "\n".join(
@@ -166,6 +176,8 @@ def build_prompt(
                     "Current state:",
                     f"- position (x, y, z): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]",
                     f"- torso yaw (degrees): {yaw:.1f}",
+                    f"- camera yaw offset (degrees): {camera_yaw:.1f}",
+                    f"- raised arm: {raised_arm}",
                     f"- distance to green ball surface: {distance:.3f} m",
                     f"You have at most {max_steps} steps in this episode.",
                 ]
@@ -205,6 +217,8 @@ def build_prompt(
                 state.get("orientation", {}).get("yaw", 0.0),
             )
         )
+        camera_yaw = float(state.get("camera_yaw", 0.0))
+        raised_arm = str(state.get("raised_arm", "none"))
         distance = float(state.get("distance_to_target", float("nan")))
         parts.append(
             "\n".join(
@@ -212,6 +226,8 @@ def build_prompt(
                     "Current state:",
                     f"- position (x, y, z): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]",
                     f"- torso yaw (degrees): {yaw:.1f}",
+                    f"- camera yaw offset (degrees): {camera_yaw:.1f}",
+                    f"- raised arm: {raised_arm}",
                     f"- distance to green ball surface: {distance:.3f} m",
                     f"You have at most {max_steps} steps in this episode.",
                 ]
@@ -234,9 +250,13 @@ def build_prompt(
     lines.append("Current state:")
     position = state.get("position", [0.0, 0.0, 0.0])
     yaw = float(state.get("orientation", {}).get("yaw", 0.0))
+    camera_yaw = float(state.get("camera_yaw", 0.0))
+    raised_arm = str(state.get("raised_arm", "none"))
     distance = float(state.get("distance_to_target", float("nan")))
     lines.append(f"- position (x, y, z): [{position[0]:.3f}, {position[1]:.3f}, {position[2]:.3f}]")
     lines.append(f"- torso yaw (degrees): {yaw:.1f}")
+    lines.append(f"- camera yaw offset (degrees): {camera_yaw:.1f}")
+    lines.append(f"- raised arm: {raised_arm}")
     lines.append(f"- distance to green ball surface: {distance:.3f} m")
     lines.append("")
     lines.append("Available actions:")

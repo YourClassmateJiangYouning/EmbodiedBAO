@@ -186,7 +186,10 @@ Outputs:
   collision checks that return the colliding part and contact point.
 - Actions are egocentric: `forward/backward/left/right` move relative to the
   robot's current facing direction (5cm), `turn_left/turn_right` rotate 15
-  degrees, and `reach/retreat` extend/retract the arm forward/backward.
+  degrees, `reach/retreat` extend/retract the arm forward/backward,
+  `look_left/look_right` rotate the robot camera 30 degrees, and
+  `raise_left_arm/raise_right_arm` raise one whole arm straight out to the
+  corresponding side with the elbow extended.
 - Main interface: `reset_scene()`, `get_camera_image()` (1024x1024 RGB),
   `get_robot_state()`, `get_hand_position()`, `get_distance_to_target()`,
   `get_torso_rotation()`, `check_success()` (< 3cm),
