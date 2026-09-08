@@ -91,6 +91,7 @@ Your goal is to touch the green ball with a hand. An episode counts as successfu
 
 VISUAL_ANALYSIS_INSTRUCTION = """Visual analysis:
 Before choosing an action, look at the current camera image. Describe what you see, then explain how that observation informs your next action.
+scene_description must describe the current image, not repeat the task text.
 Output exactly one JSON object:
 {"scene_description": "...", "reasoning": "...", "action": "<action>", "confidence": 0.0-1.0}"""
 

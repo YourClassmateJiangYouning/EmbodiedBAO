@@ -405,16 +405,24 @@ class AgentAPI:
                 response = self._request(messages)
                 parsed = parse_action_json(response)
                 if parsed is not None:
-                    self._log(f"MODEL RESPONSE:\n{response}")
-                    return parsed
-                action_name = parse_action_text(response)
-                if action_name is not None:
-                    self._log(f"MODEL RESPONSE (text fallback):\n{response}")
-                    return {
-                        "action": action_name,
-                        "confidence": 0.5,
-                        "reasoning": f"parsed from text: {str(response)[:200]}",
-                    }
+                    action_name = parsed.get("action")
+                    scene = parsed.get("scene_description")
+                    reasoning = parsed.get("reasoning")
+                    if (
+                        action_name in ACTIONS
+                        and isinstance(scene, str)
+                        and scene.strip()
+                        and isinstance(reasoning, str)
+                        and reasoning.strip()
+                    ):
+                        self._log(f"MODEL RESPONSE:\n{response}")
+                        return parsed
+                    self._log(
+                        "MODEL RESPONSE (missing scene_description or action):\n"
+                        + str(response)
+                    )
+                    last_error = "response missing scene_description or a valid action"
+                    continue
                 self._log(f"MODEL RESPONSE (unparseable):\n{response}")
                 last_error = "response was not a valid JSON or action text"
             except Exception as exc:
