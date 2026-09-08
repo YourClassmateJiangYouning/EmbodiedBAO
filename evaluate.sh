@@ -7,7 +7,7 @@ if [ -z "$1" ]; then
 fi
 
 MODEL="$1"
-EPISODES="${2:-50}"
+EPISODES="${2:-5}"
 
 echo "Running EmbodiedBAO full evaluation for model: ${MODEL} (episodes=${EPISODES})"
 "${ISAACSIM_ROOT}/python.sh" main.py --model "${MODEL}" --all-levels --episodes "${EPISODES}" --headless

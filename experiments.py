@@ -431,7 +431,7 @@ class BAOExperimentRunner:
     def run_all(
         self,
         levels: Sequence[int] = (0, 1, 2, 3),
-        episodes_per_level: int = 50,
+        episodes_per_level: int = 5,
         rounds: int = 3,
     ) -> Dict[int, List[Dict[str, Any]]]:
         results: Dict[int, List[Dict[str, Any]]] = {}
@@ -446,7 +446,7 @@ class BAOExperimentRunner:
     def run_level(
         self,
         level: int,
-        episodes: int = 50,
+        episodes: int = 5,
         rounds: int = 3,
         progress_callback: Optional[
             Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
@@ -858,7 +858,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the BAO four-level protocol.")
     parser.add_argument("--model", type=str, required=True, help="Model name passed to ai_agent")
     parser.add_argument("--levels", type=int, nargs="+", default=[0, 1, 2, 3])
-    parser.add_argument("--episodes", type=int, default=50, help="Episodes per level")
+    parser.add_argument("--episodes", type=int, default=5, help="Episodes per round")
     parser.add_argument("--rounds", type=int, default=3, help="Repeated rounds per model")
     parser.add_argument("--max_steps", type=int, default=30)
     parser.add_argument("--max_image_history", type=int, default=1)
