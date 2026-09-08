@@ -90,7 +90,7 @@ HAND_LOCAL_RIGHT_SIDE = np.array([0.0, 1.20, 0.44], dtype=float)
 # Natural H1 pose already uses elbow=1.57 to keep upper arm and forearm
 # collinear when hanging. Reach/raise must keep that elbow angle so the whole
 # arm stays on one line instead of bending at the elbow.
-REACH_SHOULDER_PITCH_RAD = 1.35
+REACH_SHOULDER_PITCH_RAD = -1.35
 LEFT_REACH_SHOULDER_PITCH_RAD = -1.35
 REACH_ELBOW_PITCH_RAD = ARM_HANG_ELBOW_PITCH_RAD
 SIDE_ARM_ELBOW_PITCH_RAD = ARM_HANG_ELBOW_PITCH_RAD
