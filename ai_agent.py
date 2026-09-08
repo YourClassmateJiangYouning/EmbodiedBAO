@@ -531,6 +531,7 @@ def create_agent(
         os.environ.get("BOYUE_BASE_URL", ""),
         os.environ.get("TAOTOKEN_BASE_URL", ""),
         os.environ.get("OPENAI_BASE_URL", ""),
+        str(log_file),
     )
     agent = _AGENT_CACHE.get(key)
     if agent is None:
