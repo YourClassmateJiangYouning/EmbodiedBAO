@@ -204,6 +204,8 @@ Outputs:
 - Optional speed knobs via `--env_config` JSON (defaults match the spec:
   1024x1024 camera, 30 render steps per action, 30 reset steps):
   `camera_resolution`, `action_steps`, `reset_steps`, `rendermode`, `spp`.
+  `robot_physics` defaults to true; set it to false only for pure kinematic
+  speed tests without real H1 joint/body motion.
   Example: `{"rendermode":"RaytracedLighting","spp":4,"camera_resolution":[512,512],
   "action_steps":5,"reset_steps":5}`.
 

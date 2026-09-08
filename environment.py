@@ -460,7 +460,7 @@ class BAOEnv:
         usd_path = self._resolve_robot_usd_path()
         add_reference_to_stage(usd_path=usd_path, prim_path=self.robot_prim_path)
         self.robot_usd_path = usd_path
-        if not self.task_dict.get("robot_physics", False):
+        if not self.task_dict.get("robot_physics", True):
             self._disable_robot_physics()
         self.robot_root = XFormPrim(prim_paths_expr=self.robot_prim_path)
         self._robot_ground_offset = self._compute_robot_ground_offset()
@@ -802,7 +802,7 @@ class BAOEnv:
         return user_pos
 
     def _init_robot_controller(self) -> bool:
-        if not self.task_dict.get("robot_physics", False):
+        if not self.task_dict.get("robot_physics", True):
             self._articulation_ok = False
             return False
         try:
