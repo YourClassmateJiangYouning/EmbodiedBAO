@@ -989,7 +989,10 @@ class BAOEnv:
                         indices.append(i)
                         positions.append(0.0)
                     elif arm == side:
-                        value = 1.35 if arm == "right" else -1.35
+                        # H1 roll limits: left -0.34..3.11 rad, right
+                        # -3.11..0.34 rad. Raising each arm sideways uses the
+                        # full side of its range.
+                        value = 1.35 if arm == "left" else -1.35
                         indices.append(i)
                         positions.append(value)
                     continue
