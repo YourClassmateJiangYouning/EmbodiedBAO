@@ -404,7 +404,14 @@ class BAOEnv:
             frequency=20,
             resolution=resolution,
         )
-        self.camera.set_focal_length(float(self.task_dict.get("camera_focal", 1.0)))
+        self.camera.set_focal_length(
+            float(
+                self.task_dict.get(
+                    "third_camera_focal",
+                    self.task_dict.get("camera_focal", 2.5),
+                )
+            )
+        )
 
     def _create_eye_camera(self) -> None:
         """Robot eye camera mounted at the H1 head d435 module."""
@@ -419,7 +426,14 @@ class BAOEnv:
             frequency=20,
             resolution=resolution,
         )
-        self.eye_camera.set_focal_length(float(self.task_dict.get("camera_focal", 1.0)))
+        self.eye_camera.set_focal_length(
+            float(
+                self.task_dict.get(
+                    "robot_camera_focal",
+                    self.task_dict.get("camera_focal", 1.5),
+                )
+            )
+        )
 
     def _create_lights(self) -> None:
         """Add scene lights; without them the camera images are black."""

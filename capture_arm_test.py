@@ -49,15 +49,15 @@ def _save_third_view(env, name: str) -> None:
     try:
         try:
             set_camera_view(
-                eye=[2.0, -4.5, 2.6],
-                target=[1.96, 0.0, 1.2],
+                eye=[1.5, -4.5, 2.6],
+                target=[1.5, 0.0, 1.2],
                 up=[0.0, 0.0, 1.0],
                 camera_prim_path="/World/Camera",
             )
         except TypeError:
             set_camera_view(
-                eye=[2.0, -4.5, 2.6],
-                target=[1.96, 0.0, 1.2],
+                eye=[1.5, -4.5, 2.6],
+                target=[1.5, 0.0, 1.2],
                 camera_prim_path="/World/Camera",
             )
         for _ in range(5):
@@ -96,8 +96,6 @@ def main() -> int:
     simulation_app = SimulationApp({"headless": args.headless})
     env = None
     try:
-        import numpy as np
-
         import environment
 
         task_dict = json.loads(args.env_config)
@@ -107,7 +105,6 @@ def main() -> int:
         _save_robot_view(env, f"{args.prefix}_initial.png")
         _save_third_view(env, f"{args.prefix}_initial_third.png")
 
-        env._set_robot_pose(np.array([1.96, 0.0, 0.0]), 90.0)
         env.execute_action("raise_right_arm", n_steps=120)
         _print_shoulder_elbow(env, "right_arm joints")
         print(
@@ -124,7 +121,6 @@ def main() -> int:
         env._articulation_ok = False
         env._reach_joint_indices = None
         env.reset_scene()
-        env._set_robot_pose(np.array([1.96, 0.0, 0.0]), -90.0)
         env.execute_action("raise_left_arm", n_steps=120)
         _print_shoulder_elbow(env, "left_arm joints")
         print(
