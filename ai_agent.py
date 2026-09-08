@@ -87,7 +87,8 @@ def disable_proxy() -> None:
 ACTION_NAMES_TEXT = ", ".join(ACTIONS)
 OUTPUT_JSON_SUFFIX = (
     f"\n\nAvailable actions: {ACTION_NAMES_TEXT}.\n"
-    'Output JSON: {"action": "...", "confidence": ..., "reasoning": "..."}'
+    'Output JSON: {"scene_description": "...", "reasoning": "...", '
+    '"action": "...", "confidence": ...}'
 )
 
 LEVEL_TEMPLATES: Dict[int, str] = {
@@ -389,8 +390,9 @@ class AgentAPI:
         messages = self._build_messages(image, prompt)
         repair_hint = (
             "Your previous output was not valid. Respond with exactly one JSON object: "
-            f'{{"action": "one of {ACTION_NAMES_TEXT}", '
-            '"confidence": 0.0-1.0, "reasoning": "short text"}.'
+            f'{{"scene_description": "what you see", '
+            f'"reasoning": "short text", "action": "one of {ACTION_NAMES_TEXT}", '
+            '"confidence": 0.0-1.0}.'
         )
 
         last_error: Optional[str] = None

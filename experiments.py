@@ -70,6 +70,31 @@ ACTION_OPTIONS_STRING: str = "\n".join(
 )
 
 
+CONTROL_MANUAL = """Control manual:
+You are an egocentric humanoid robot. Forward/backward/left/right move relative to the direction your torso is currently facing.
+- forward: move forward 5 cm
+- backward: move backward 5 cm
+- left: move left 5 cm
+- right: move right 5 cm
+- turn_left: rotate your torso 15 degrees counterclockwise
+- turn_right: rotate your torso 15 degrees clockwise
+- reach_left_arm: extend your whole left arm straight forward
+- retreat_left_arm: return your left arm to natural hanging
+- reach_right_arm: extend your whole right arm straight forward
+- retreat_right_arm: return your right arm to natural hanging
+- raise_left_arm: raise your whole left arm straight out to the left
+- raise_right_arm: raise your whole right arm straight out to the right
+- look_left: rotate your camera 30 degrees to the left
+- look_right: rotate your camera 30 degrees to the right
+
+Your goal is to touch the green ball with a hand. An episode counts as successful only when a hand reaches the ball."""
+
+VISUAL_ANALYSIS_INSTRUCTION = """Visual analysis:
+Before choosing an action, look at the current camera image. Describe what you see, then explain how that observation informs your next action.
+Output exactly one JSON object:
+{"scene_description": "...", "reasoning": "...", "action": "<action>", "confidence": 0.0-1.0}"""
+
+
 LEVEL0_FULL_PROMPT = """You are a Unitree H1 humanoid robot in a simulation environment.
 
 【Scene Description】
@@ -99,7 +124,7 @@ Step 4: Side-step through the opening while staying sideways
 Step 5: While sideways in the opening, raise the whole arm on the side closest to the green ball straight out to the side and touch it
 
 【Available Actions】
-You must respond with a JSON object containing one action:
+You must respond with a JSON object containing scene_description, reasoning, action and confidence:
 {"action": "forward"}  - move forward 5cm
 {"action": "backward"} - move backward 5cm
 {"action": "left"}     - move left 5cm
@@ -149,7 +174,9 @@ def build_prompt(
     """Build the per-level prompt text for one decision step."""
     if level == 4:
         parts = [
-            LEVEL0_FULL_PROMPT if phase == "A" else LEVEL4_PHASE_B_PROMPT
+            LEVEL0_FULL_PROMPT if phase == "A" else LEVEL4_PHASE_B_PROMPT,
+            CONTROL_MANUAL,
+            VISUAL_ANALYSIS_INSTRUCTION,
         ]
         if session_memory:
             parts.append("Previous completed episodes:\n" + "\n".join(session_memory))
@@ -194,15 +221,19 @@ def build_prompt(
                     options,
                     (
                         'Reply with exactly one JSON object: '
-                        '{"action": "<action>", "confidence": 0.0-1.0, '
-                        '"reasoning": "<short text>"}.'
+                        '{"scene_description": "<text>", "reasoning": "<text>", '
+                        '"action": "<action>", "confidence": 0.0-1.0}.'
                     ),
                 ]
             )
         return "\n\n".join(parts)
 
     if level == 0:
-        parts = [LEVEL_PROMPTS[0]]
+        parts = [
+            LEVEL_PROMPTS[0],
+            CONTROL_MANUAL,
+            VISUAL_ANALYSIS_INSTRUCTION,
+        ]
         if history:
             lines = ["Action history (most recent first):"]
             for item in list(history)[-6:][::-1]:
@@ -244,6 +275,8 @@ def build_prompt(
         "You perceive the scene through your head camera and control your body "
         "with discrete actions.",
         LEVEL_PROMPTS[level],
+        CONTROL_MANUAL,
+        VISUAL_ANALYSIS_INSTRUCTION,
     ]
 
     if history:
@@ -268,8 +301,8 @@ def build_prompt(
     lines.append("")
     lines.append(
         'Reply with exactly one JSON object: '
-        '{"action": "<action>", "confidence": 0.0-1.0, '
-        '"reasoning": "<short text>"}.'
+        '{"scene_description": "<text>", "reasoning": "<text>", '
+        '"action": "<action>", "confidence": 0.0-1.0}.'
     )
     lines.append(f"You have at most {max_steps} steps in this episode.")
     return "\n".join(lines)
