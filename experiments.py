@@ -118,11 +118,11 @@ A transparent wall spans the entire 4m × 4m scene at x=2.0m, dividing it into f
 A green ball is located behind the wall at x=2.4m, z=0, height 1.2m. Reach the green ball.
 
 【Complete Solution - Follow These Steps】
-Step 1: Move forward until you reach the wall edge
-Step 2: Extend the arm toward the ball once (reach_left_arm or reach_right_arm). If it is still out of reach, retreat that arm
-Step 3: Back away from the wall if needed, then turn your body sideways (rotate 90 degrees left or right)
-Step 4: Side-step through the opening while staying sideways
-Step 5: While sideways in the opening, raise the whole arm on the side closest to the green ball straight out to the side and touch it
+Step 1: Move forward about 7 steps until you reach the wall edge
+Step 2: Execute reach_right_arm once, then execute retreat_right_arm
+Step 3: Execute backward about 4 steps to make room
+Step 4: Execute turn_left 6 times so you are sideways
+Step 5: Execute right 5 times, then execute raise_right_arm to touch the ball
 
 【Available Actions】
 You must respond with a JSON object containing scene_description, reasoning, action and confidence:
