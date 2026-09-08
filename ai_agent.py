@@ -174,10 +174,13 @@ def parse_action_json(text: Any) -> Optional[Dict[str, Any]]:
         confidence = float(data.get("confidence", 0.0))
     except (TypeError, ValueError):
         confidence = 0.0
+    scene = data.get("scene_description", "")
+    reasoning = data.get("reasoning", "")
     return {
         "action": action,
         "confidence": confidence,
-        "reasoning": str(data.get("reasoning", "")),
+        "reasoning": str(reasoning),
+        "scene_description": str(scene),
     }
 
 
