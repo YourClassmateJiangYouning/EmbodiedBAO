@@ -48,8 +48,8 @@ def _save_third_view(env, name: str) -> None:
 
     try:
         set_camera_view(
-            eye=[1.0, -4.5, 2.2],
-            target=[1.8, 0.0, 1.1],
+            eye=[2.0, -4.5, 2.6],
+            target=[1.96, 0.0, 1.2],
             up=[0.0, 0.0, 1.0],
             camera_prim_path="/World/Camera",
         )
@@ -60,6 +60,23 @@ def _save_third_view(env, name: str) -> None:
         print(f"saved third view: {os.path.abspath(name)}")
     except Exception as exc:
         print(f"failed to save third view {name}: {exc}")
+
+
+def _print_shoulder_elbow(env, label: str) -> None:
+    if not env._articulation_ok or env._articulation is None:
+        print(f"{label}: articulation unavailable")
+        return
+    try:
+        names = env._articulation_dof_names()
+        values = env._articulation_joint_positions()
+        pairs = []
+        for name, value in zip(names, values):
+            lower = name.lower()
+            if "shoulder" in lower or "elbow" in lower:
+                pairs.append((name, round(float(value), 3)))
+        print(f"{label}: {pairs}")
+    except Exception as exc:
+        print(f"{label}: joint read failed: {exc}")
 
 
 def main() -> int:
@@ -84,31 +101,27 @@ def main() -> int:
         _save_third_view(env, f"{args.prefix}_initial_third.png")
 
         env._set_robot_pose(np.array([1.96, 0.0, 0.0]), 90.0)
-        env.execute_action("raise_right_arm", n_steps=10)
+        env.execute_action("raise_right_arm", n_steps=30)
+        _print_shoulder_elbow(env, "right_arm joints")
         print(
             "right_arm side distance:",
             round(float(env.get_distance_to_target()), 4),
             "success:",
             env.check_success(),
         )
-        env._camera_yaw_offset = -90.0
-        env._update_eye_camera()
-        env.world.step(render=True)
         _save_robot_view(env, f"{args.prefix}_raise_right.png")
         _save_third_view(env, f"{args.prefix}_raise_right_third.png")
 
         env.reset_scene()
         env._set_robot_pose(np.array([1.96, 0.0, 0.0]), -90.0)
-        env.execute_action("raise_left_arm", n_steps=10)
+        env.execute_action("raise_left_arm", n_steps=30)
+        _print_shoulder_elbow(env, "left_arm joints")
         print(
             "left_arm side distance:",
             round(float(env.get_distance_to_target()), 4),
             "success:",
             env.check_success(),
         )
-        env._camera_yaw_offset = 90.0
-        env._update_eye_camera()
-        env.world.step(render=True)
         _save_robot_view(env, f"{args.prefix}_raise_left.png")
         _save_third_view(env, f"{args.prefix}_raise_left_third.png")
         return 0
