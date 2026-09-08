@@ -84,9 +84,9 @@ def disable_proxy() -> None:
         os.environ.pop(name, None)
 
 
+ACTION_NAMES_TEXT = ", ".join(ACTIONS)
 OUTPUT_JSON_SUFFIX = (
-    "\n\nAvailable actions: forward, backward, left, right, turn_left, turn_right, "
-    "reach, retreat.\n"
+    f"\n\nAvailable actions: {ACTION_NAMES_TEXT}.\n"
     'Output JSON: {"action": "...", "confidence": ..., "reasoning": "..."}'
 )
 
@@ -389,8 +389,8 @@ class AgentAPI:
         messages = self._build_messages(image, prompt)
         repair_hint = (
             "Your previous output was not valid. Respond with exactly one JSON object: "
-            '{"action": "one of forward, backward, left, right, turn_left, turn_right, '
-            'reach, retreat", "confidence": 0.0-1.0, "reasoning": "short text"}.'
+            f'{{"action": "one of {ACTION_NAMES_TEXT}", '
+            '"confidence": 0.0-1.0, "reasoning": "short text"}.'
         )
 
         last_error: Optional[str] = None

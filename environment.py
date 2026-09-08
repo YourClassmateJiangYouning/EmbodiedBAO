@@ -83,10 +83,12 @@ ARM_HANG_ELBOW_PITCH_RAD = 1.57
 # Analytic end-effector offsets in the robot frame (x forward, y up, z right).
 HAND_LOCAL_REST = np.array([0.10, 0.95, 0.24], dtype=float)
 HAND_LOCAL_REACH = np.array([0.44, 1.20, 0.24], dtype=float)  # +34 cm forward
+HAND_LOCAL_LEFT_REACH = np.array([0.44, 1.20, -0.24], dtype=float)
 HAND_LOCAL_LEFT_SIDE = np.array([0.0, 1.20, -0.44], dtype=float)
 HAND_LOCAL_RIGHT_SIDE = np.array([0.0, 1.20, 0.44], dtype=float)
 
 REACH_SHOULDER_PITCH_RAD = -1.35
+LEFT_REACH_SHOULDER_PITCH_RAD = 1.35
 REACH_ELBOW_PITCH_RAD = 0.0
 
 ACTIONS = [
@@ -96,8 +98,10 @@ ACTIONS = [
     "right",
     "turn_left",
     "turn_right",
-    "reach",
-    "retreat",
+    "reach_left_arm",
+    "retreat_left_arm",
+    "reach_right_arm",
+    "retreat_right_arm",
     "look_left",
     "look_right",
     "raise_left_arm",
@@ -268,11 +272,15 @@ class BAOEnv:
         self._robot_ground_offset = 0.0
         self._channel_width = float(self.task_dict.get("channel_width", CHANNEL_WIDTH))
         self.reaching = False
+        self.left_reaching = False
         self.raised_arm: Optional[str] = None
+        self.arm_modes: Dict[str, str] = {"left": "natural", "right": "natural"}
         self._camera_yaw_offset = 0.0
 
         self._create_ground()
         self._create_wall()
+        if self.task_dict.get("hide_wall", False):
+            self._remove_wall()
         self._create_target()
         self._create_lights()
         self._create_camera()
@@ -958,24 +966,101 @@ class BAOEnv:
             return None
         return np.array([right_shoulder, right_elbow], dtype=int)
 
-    def _set_reaching(self, reaching: bool) -> None:
-        if reaching:
-            self.raised_arm = None
-        if self._articulation_ok and self._reach_joint_indices is not None:
-            if reaching:
-                targets = np.array([REACH_SHOULDER_PITCH_RAD, REACH_ELBOW_PITCH_RAD])
-            else:
-                targets = np.zeros(len(self._reach_joint_indices))
-            self._articulation_set_targets(
-                targets, self._reach_joint_indices
+    def _find_arm_reach_indices(self, side: str) -> Optional[np.ndarray]:
+        names = self._articulation_dof_names()
+
+        def pick(keyword_groups: List[List[str]]) -> Optional[int]:
+            for keywords in keyword_groups:
+                for i, name in enumerate(names):
+                    lower = name.lower()
+                    if all(k in lower for k in keywords):
+                        return i
+            return None
+
+        shoulder = pick([[side, "shoulder_pitch"], ["shoulder_pitch"]])
+        elbow = pick([[side, "elbow"], ["elbow"]])
+        if shoulder is None or elbow is None:
+            return None
+        return np.array([shoulder, elbow], dtype=int)
+
+    def _sync_arm_flags(self) -> None:
+        self.reaching = self.arm_modes["right"] == "reach"
+        self.left_reaching = self.arm_modes["left"] == "reach"
+        self.raised_arm = (
+            "left"
+            if self.arm_modes["left"] == "raised"
+            else "right"
+            if self.arm_modes["right"] == "raised"
+            else None
+        )
+
+    def _set_arm_reach(self, side: str, reaching: bool) -> None:
+        """Set one arm to forward reach or natural, leaving the other side alone."""
+        self._reset_arm_to_natural(side)
+        if not reaching:
+            self._sync_arm_flags()
+            return
+        self.arm_modes[side] = "reach"
+        if self._articulation_ok:
+            indices = self._find_arm_reach_indices(side)
+            if indices is not None:
+                pitch = (
+                    LEFT_REACH_SHOULDER_PITCH_RAD
+                    if side == "left"
+                    else REACH_SHOULDER_PITCH_RAD
+                )
+                self._articulation_set_targets(
+                    np.array([pitch, REACH_ELBOW_PITCH_RAD]),
+                    indices,
+                )
+        self._sync_arm_flags()
+
+    def _reset_arm_to_natural(self, side: str) -> None:
+        """Return one arm to the initial hanging pose without touching the other."""
+        self.arm_modes[side] = "natural"
+        if not self._articulation_ok or self._articulation is None:
+            self._sync_arm_flags()
+            return
+        try:
+            names = self._articulation_dof_names()
+            hang_elbow = float(
+                self.task_dict.get("arm_hang_elbow_pitch_rad", ARM_HANG_ELBOW_PITCH_RAD)
             )
-        self.reaching = reaching
+            indices: List[int] = []
+            positions: List[float] = []
+            for i, name in enumerate(names):
+                lower = name.lower()
+                if side not in lower:
+                    continue
+                if "shoulder_pitch" in lower:
+                    indices.append(i)
+                    positions.append(0.0)
+                elif "shoulder_roll" in lower:
+                    indices.append(i)
+                    positions.append(0.0)
+                elif "shoulder_yaw" in lower:
+                    indices.append(i)
+                    positions.append(0.0)
+                elif "elbow" in lower:
+                    indices.append(i)
+                    positions.append(hang_elbow)
+            if indices:
+                self._articulation_set_targets(
+                    np.asarray(positions, dtype=float),
+                    np.array(indices, dtype=int),
+                )
+        except Exception as exc:
+            print(f"[BAOEnv] natural arm reset skipped: {exc}")
+        self._sync_arm_flags()
 
     def _set_side_arm(self, arm: Optional[str]) -> None:
         """Raise one whole arm straight out to the side (elbow extended)."""
-        self.raised_arm = arm
-        self.reaching = False
+        if arm is None:
+            return
+        self._reset_arm_to_natural(arm)
+        self.arm_modes[arm] = "raised"
         if not self._articulation_ok or self._articulation is None:
+            self._sync_arm_flags()
             return
         try:
             names = self._articulation_dof_names()
@@ -984,19 +1069,15 @@ class BAOEnv:
             for i, name in enumerate(names):
                 lower = name.lower()
                 side = "left" if "left" in lower else "right" if "right" in lower else None
-                if "shoulder_roll" in lower:
-                    if arm is None:
-                        indices.append(i)
-                        positions.append(0.0)
-                    elif arm == side:
-                        # H1 roll limits: left -0.34..3.11 rad, right
-                        # -3.11..0.34 rad. Raising each arm sideways uses the
-                        # full side of its range.
-                        value = 1.35 if arm == "left" else -1.35
-                        indices.append(i)
-                        positions.append(value)
+                if "shoulder_roll" in lower and arm == side:
+                    # H1 roll limits: left -0.34..3.11 rad, right
+                    # -3.11..0.34 rad. Raising each arm sideways uses the
+                    # full side of its range.
+                    value = 1.35 if arm == "left" else -1.35
+                    indices.append(i)
+                    positions.append(value)
                     continue
-                if arm is not None and arm == side:
+                if arm == side:
                     if "shoulder_pitch" in lower:
                         indices.append(i)
                         positions.append(0.0)
@@ -1010,6 +1091,7 @@ class BAOEnv:
                 )
         except Exception as exc:
             print(f"[BAOEnv] side arm joint init skipped: {exc}")
+        self._sync_arm_flags()
 
     def _set_standing_joint_targets(self) -> None:
         """Pose the robot: upright hips/knees and arms hanging down."""
@@ -1075,6 +1157,8 @@ class BAOEnv:
             local = HAND_LOCAL_LEFT_SIDE
         elif self.raised_arm == "right":
             local = HAND_LOCAL_RIGHT_SIDE
+        elif self.left_reaching:
+            local = HAND_LOCAL_LEFT_REACH
         elif self.reaching:
             local = HAND_LOCAL_REACH
         else:
@@ -1162,7 +1246,9 @@ class BAOEnv:
         self._init_robot_controller()
         self._set_robot_pose(ROBOT_START_POS, ROBOT_START_YAW_DEG)
         self.reaching = False
+        self.left_reaching = False
         self.raised_arm = None
+        self.arm_modes = {"left": "natural", "right": "natural"}
         self._camera_yaw_offset = 0.0
         if self._articulation is not None:
             try:
@@ -1211,6 +1297,8 @@ class BAOEnv:
             "camera_yaw": self._camera_yaw_offset,
             "raised_arm": self.raised_arm,
             "reaching": self.reaching,
+            "left_reaching": self.left_reaching,
+            "arm_modes": dict(self.arm_modes),
         }
 
     def get_torso_rotation(self) -> float:
@@ -1218,7 +1306,7 @@ class BAOEnv:
         return float(self._robot_yaw)
 
     def get_hand_position(self) -> np.ndarray:
-        if self.reaching or self.raised_arm is not None:
+        if self.reaching or self.left_reaching or self.raised_arm is not None:
             return self._analytic_hand_position()
         if self._articulation_ok and self.hand_xform is not None:
             try:
@@ -1356,23 +1444,21 @@ class BAOEnv:
             )
             return True, "executed", None
 
-        if action == "reach":
-            self._set_side_arm(None)
-            self._set_reaching(True)
+        if action in ("reach_left_arm", "reach_right_arm"):
+            side = action.split("_")[1]
+            self._set_arm_reach(side, True)
             return True, "executed", None
 
-        if action == "retreat":
-            self._set_side_arm(None)
-            self._set_reaching(False)
+        if action in ("retreat_left_arm", "retreat_right_arm"):
+            side = action.split("_")[1]
+            self._reset_arm_to_natural(side)
             return True, "executed", None
 
         if action == "raise_left_arm":
-            self._set_reaching(False)
             self._set_side_arm("left")
             return True, "executed", None
 
         if action == "raise_right_arm":
-            self._set_reaching(False)
             self._set_side_arm("right")
             return True, "executed", None
 

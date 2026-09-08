@@ -1,14 +1,12 @@
-"""Capture the initial robot view and straight side-arm raise diagnostics.
+"""Capture all six arm-action poses from a top-down view.
 
 Usage (on the machine with Isaac Sim):
 
     $ISAACSIM_ROOT/python.sh capture_arm_test.py --headless \
-        --env_config '{"robot_physics":true}'
+        --env_config '{"robot_physics":true,"hide_wall":true}'
 
 Outputs:
-    <prefix>_initial.png
-    <prefix>_raise_right.png
-    <prefix>_raise_left.png
+    <prefix>_<action>.png
 """
 
 from __future__ import annotations
@@ -42,31 +40,31 @@ def _save_robot_view(env, name: str) -> None:
         print(f"failed to save robot view {name}: {exc}")
 
 
-def _save_third_view(env, name: str) -> None:
+def _save_top_view(env, name: str) -> None:
     from PIL import Image
     from isaacsim.core.utils.viewports import set_camera_view
 
     try:
         try:
             set_camera_view(
-                eye=[1.5, -4.5, 2.6],
-                target=[1.5, 0.0, 1.2],
-                up=[0.0, 0.0, 1.0],
+                eye=[2.0, 0.0, 4.0],
+                target=[2.0, 0.0, 0.0],
+                up=[0.0, 1.0, 0.0],
                 camera_prim_path="/World/Camera",
             )
         except TypeError:
             set_camera_view(
-                eye=[1.5, -4.5, 2.6],
-                target=[1.5, 0.0, 1.2],
+                eye=[2.0, 0.0, 4.0],
+                target=[2.0, 0.0, 0.0],
                 camera_prim_path="/World/Camera",
             )
         for _ in range(5):
             env.world.step(render=True)
         rgb = env.camera.get_rgb()
         Image.fromarray(rgb).save(name)
-        print(f"saved third view: {os.path.abspath(name)}")
+        print(f"saved top view: {os.path.abspath(name)}")
     except Exception as exc:
-        print(f"failed to save third view {name}: {exc}")
+        print(f"failed to save top view {name}: {exc}")
 
 
 def _print_shoulder_elbow(env, label: str) -> None:
@@ -102,35 +100,20 @@ def main() -> int:
         task_dict["headless"] = args.headless
         env = environment.setup_scene(simulation_app, task_dict=task_dict)
         env.reset_scene()
-        _save_robot_view(env, f"{args.prefix}_initial.png")
-        _save_third_view(env, f"{args.prefix}_initial_third.png")
 
-        env.execute_action("raise_right_arm", n_steps=120)
-        _print_shoulder_elbow(env, "right_arm joints")
-        print(
-            "right_arm side distance:",
-            round(float(env.get_distance_to_target()), 4),
-            "success:",
-            env.check_success(),
-        )
-        _save_robot_view(env, f"{args.prefix}_raise_right.png")
-        _save_third_view(env, f"{args.prefix}_raise_right_third.png")
-
-        env.reset_scene()
-        env._articulation = None
-        env._articulation_ok = False
-        env._reach_joint_indices = None
-        env.reset_scene()
-        env.execute_action("raise_left_arm", n_steps=120)
-        _print_shoulder_elbow(env, "left_arm joints")
-        print(
-            "left_arm side distance:",
-            round(float(env.get_distance_to_target()), 4),
-            "success:",
-            env.check_success(),
-        )
-        _save_robot_view(env, f"{args.prefix}_raise_left.png")
-        _save_third_view(env, f"{args.prefix}_raise_left_third.png")
+        actions = [
+            "reach_left_arm",
+            "raise_left_arm",
+            "retreat_left_arm",
+            "reach_right_arm",
+            "raise_right_arm",
+            "retreat_right_arm",
+        ]
+        for action in actions:
+            env.execute_action(action, n_steps=120)
+            _print_shoulder_elbow(env, f"{action} joints")
+            print("arm_modes:", env.arm_modes)
+            _save_top_view(env, f"{args.prefix}_{action}.png")
         return 0
     finally:
         if env is not None:

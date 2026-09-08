@@ -42,7 +42,9 @@ def _make_env() -> BAOEnv:
     env._articulation_ok = False
     env.hand_xform = None
     env.reaching = False
+    env.left_reaching = False
     env.raised_arm = None
+    env.arm_modes = {"left": "natural", "right": "natural"}
     env._camera_yaw_offset = 0.0
     return env
 
@@ -129,6 +131,38 @@ class CoordinateRegressionTest(unittest.TestCase):
         self.assertAlmostEqual(float(hand[0]), 2.20)
         self.assertAlmostEqual(float(hand[1]), 1.20)
         self.assertAlmostEqual(float(hand[2]), -0.44)
+
+        env._set_robot_pose(np.array([1.96, 0.0, 0.0]), 0.0)
+        env.reaching = False
+        env.left_reaching = True
+        hand = env.get_hand_position()
+        self.assertAlmostEqual(float(hand[0]), 2.40)
+        self.assertAlmostEqual(float(hand[1]), 1.20)
+        self.assertAlmostEqual(float(hand[2]), -0.24)
+
+    def test_arm_reach_actions_set_state(self) -> None:
+        env = _make_env()
+        env._apply_action("reach_right_arm")
+        self.assertTrue(env.reaching)
+        env._apply_action("retreat_right_arm")
+        self.assertFalse(env.reaching)
+        env._apply_action("reach_left_arm")
+        self.assertTrue(env.left_reaching)
+        env._apply_action("retreat_left_arm")
+        self.assertFalse(env.left_reaching)
+
+    def test_arms_are_independent_and_transitions_are_clean(self) -> None:
+        env = _make_env()
+        env._apply_action("raise_right_arm")
+        self.assertEqual(env.arm_modes["right"], "raised")
+        env._apply_action("reach_right_arm")
+        self.assertEqual(env.arm_modes["right"], "reach")
+        env._apply_action("raise_left_arm")
+        self.assertEqual(env.arm_modes["right"], "reach")
+        self.assertEqual(env.arm_modes["left"], "raised")
+        env._apply_action("retreat_right_arm")
+        self.assertEqual(env.arm_modes["right"], "natural")
+        self.assertEqual(env.arm_modes["left"], "raised")
 
     def test_side_arm_can_touch_ball_while_sideways(self) -> None:
         env = _make_env()

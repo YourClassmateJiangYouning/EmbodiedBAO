@@ -55,8 +55,10 @@ ACTION_DESCRIPTIONS: Dict[str, str] = {
     "right": "translate 5 cm to the right of the current facing direction",
     "turn_left": "rotate the torso 15 degrees counterclockwise around +y",
     "turn_right": "rotate the torso 15 degrees clockwise around +y",
-    "reach": "extend the right arm forward",
-    "retreat": "pull the right arm back",
+    "reach_left_arm": "extend the whole left arm straight forward",
+    "retreat_left_arm": "return the left arm to natural hanging",
+    "reach_right_arm": "extend the whole right arm straight forward",
+    "retreat_right_arm": "return the right arm to natural hanging",
     "look_left": "rotate the robot camera 30 degrees to the left",
     "look_right": "rotate the robot camera 30 degrees to the right",
     "raise_left_arm": "raise the whole left arm straight out to the left side",
@@ -91,7 +93,7 @@ A green ball is located behind the wall at x=2.4m, z=0, height 1.2m. Reach the g
 
 【Complete Solution - Follow These Steps】
 Step 1: Move forward until you reach the wall edge
-Step 2: Reach forward once. If it is still out of reach, retreat and lower your arm
+Step 2: Extend the arm toward the ball once (reach_left_arm or reach_right_arm). If it is still out of reach, retreat that arm
 Step 3: Back away from the wall if needed, then turn your body sideways (rotate 90 degrees left or right)
 Step 4: Side-step through the opening while staying sideways
 Step 5: While sideways in the opening, raise the whole arm on the side closest to the green ball straight out to the side and touch it
@@ -104,8 +106,10 @@ You must respond with a JSON object containing one action:
 {"action": "right"}    - move right 5cm
 {"action": "turn_left"} - rotate body 15 degrees counterclockwise
 {"action": "turn_right"} - rotate body 15 degrees clockwise
-{"action": "reach"}    - extend arm forward
-{"action": "retreat"}  - retract arm back
+{"action": "reach_left_arm"} - extend whole left arm straight forward
+{"action": "retreat_left_arm"} - return left arm to natural hanging
+{"action": "reach_right_arm"} - extend whole right arm straight forward
+{"action": "retreat_right_arm"} - return right arm to natural hanging
 {"action": "look_left"} - rotate camera 30 degrees left
 {"action": "look_right"} - rotate camera 30 degrees right
 {"action": "raise_left_arm"} - raise whole left arm straight out to left
