@@ -91,6 +91,8 @@ def main() -> int:
             "success:",
             env.check_success(),
         )
+        env._camera_yaw_offset = -90.0
+        env._update_eye_camera()
         _save_robot_view(env, f"{args.prefix}_raise_right.png")
         _save_third_view(env, f"{args.prefix}_raise_right_third.png")
 
@@ -103,6 +105,8 @@ def main() -> int:
             "success:",
             env.check_success(),
         )
+        env._camera_yaw_offset = 90.0
+        env._update_eye_camera()
         _save_robot_view(env, f"{args.prefix}_raise_left.png")
         _save_third_view(env, f"{args.prefix}_raise_left_third.png")
         return 0
