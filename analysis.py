@@ -189,8 +189,8 @@ def strategy_vector(episode: Dict[str, Any]) -> Dict[str, Any]:
     yaw_rad = math.radians(mean_yaw)
 
     n = max(1, len(actions))
-    reach = sum(a == "reach" for a in actions) / n
-    retreat = sum(a == "retreat" for a in actions) / n
+    reach = sum(a.startswith("reach_") for a in actions) / n
+    retreat = sum(a.startswith("retreat_") for a in actions) / n
     extension = float(np.clip(reach - retreat, 0.0, 1.0))
 
     displacement = np.zeros(2, dtype=float)

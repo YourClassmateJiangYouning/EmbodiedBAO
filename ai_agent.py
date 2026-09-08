@@ -310,8 +310,8 @@ class AgentAPI:
         base_url: Optional[str] = None,
         timeout: Optional[float] = None,
         temperature: float = 0.0,
-        max_retries: int = 3,
-        use_json_mode: bool = True,
+        max_retries: Optional[int] = None,
+        use_json_mode: bool = False,
         log_file: Optional[str] = None,
     ) -> None:
         self.model_name = normalize_model_name(model_name)
@@ -348,8 +348,12 @@ class AgentAPI:
             self.base_url = OPENAI_DEFAULT_BASE_URL
         self.timeout = timeout or float(os.environ.get("BAO_LLM_TIMEOUT", "60"))
         self.temperature = temperature
-        self.max_retries = int(max_retries)
+        retry_env = os.environ.get("BAO_MAX_RETRIES", "1")
+        self.max_retries = (
+            int(max_retries) if max_retries is not None else int(retry_env)
+        )
         self.use_json_mode = bool(use_json_mode)
+        self._json_mode_enabled = self.use_json_mode
         self.log_file = log_file
 
         if os.environ.get("BAO_DISABLE_PROXY", "0") == "1":
@@ -362,6 +366,7 @@ class AgentAPI:
                 api_key=self.api_key,
                 base_url=self.base_url,
                 timeout=self.timeout,
+                max_retries=0,
             )
         except Exception as exc:
             print(
@@ -419,9 +424,6 @@ class AgentAPI:
                         if isinstance(reasoning, str) and reasoning.strip():
                             parsed.setdefault("reasoning", reasoning)
                         return parsed
-                    if isinstance(scene, str) and scene.strip():
-                        self._log(f"MODEL RESPONSE:\n{response}")
-                        return parsed
                     self._log(
                         "MODEL RESPONSE (missing scene_description or action):\n"
                         + str(response)
@@ -470,15 +472,17 @@ class AgentAPI:
             "messages": messages,
             "temperature": self.temperature,
         }
-        if self.use_json_mode:
+        if self._json_mode_enabled:
             try:
                 completion = self.client.chat.completions.create(
                     response_format={"type": "json_object"}, **kwargs
                 )
                 return completion.choices[0].message.content or ""
             except Exception:
-                # Some aggregator endpoints reject response_format; retry plain.
-                pass
+                # Some aggregator endpoints reject response_format. Disable it
+                # for the rest of the process instead of retrying JSON mode on
+                # every request.
+                self._json_mode_enabled = False
         completion = self.client.chat.completions.create(**kwargs)
         return completion.choices[0].message.content or ""
 

@@ -583,6 +583,8 @@ class BAOExperimentRunner:
                 f"steps={len(episode_result['steps'])}, "
                 f"max_side_rotation={self._max_abs_yaw(episode_result['steps']):.0f} deg"
             )
+            if len(session_memory) > 20:
+                del session_memory[:-20]
             return episode_result
 
         for _ in range(int(phase_a_initial)):
@@ -685,15 +687,13 @@ class BAOExperimentRunner:
                 f"round{round_id}_level{level}_episode{episode_id:03d}_agent.txt",
             )
             agent = AgentAdapter(model=self.model, log_file=agent_log)
-        if shared_history is not None:
-            agent.history = shared_history
         history: List[Dict[str, str]] = (
             shared_history
             if shared_history is not None
-            else list(agent.history)
-            if agent is not None
             else []
         )
+        if agent is not None:
+            agent.history = history
 
         _, distance = self.env.reset_scene()
         image_history: List[np.ndarray] = []
@@ -728,6 +728,7 @@ class BAOExperimentRunner:
                 collided = False
                 distance = self.env.get_distance_to_target()
                 step_success = self.env.check_success()
+                result_state: Optional[Dict[str, Any]] = None
             else:
                 result = self.env.execute_action(action_name)
                 action_taken = action_name
@@ -735,6 +736,7 @@ class BAOExperimentRunner:
                 collision_info = result.collision
                 distance = result.distance
                 step_success = result.success
+                result_state = result.state
                 explicit_collision = self.env.check_collision_with_wall()
                 collided = (not result.legal) or explicit_collision
                 if explicit_collision and collision_info is None:
@@ -744,7 +746,11 @@ class BAOExperimentRunner:
             if collided:
                 wall_collision_count += 1
 
-            new_state = self.env.get_robot_state()
+            new_state = (
+                result_state
+                if result_state is not None
+                else self.env.get_robot_state()
+            )
             hand_pos = new_state.get(
                 "hand_position", new_state.get("end_effector_position", [0.0, 0.0, 0.0])
             )
@@ -781,7 +787,6 @@ class BAOExperimentRunner:
             steps.append(step_record)
             action_sequence.append(action_taken)
             history.append({"action": action_taken, "feedback": feedback})
-            agent.record(action_taken, feedback)
             image_history.append(rgb)
             if self.max_image_history > 0:
                 image_history = image_history[-self.max_image_history :]
