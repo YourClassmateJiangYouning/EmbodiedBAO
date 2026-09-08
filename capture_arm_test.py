@@ -34,26 +34,32 @@ def parse_args() -> argparse.Namespace:
 def _save_robot_view(env, name: str) -> None:
     from PIL import Image
 
-    rgb = env.get_camera_image()
-    Image.fromarray(rgb).save(name)
-    print(f"saved robot view: {os.path.abspath(name)}")
+    try:
+        rgb = env.get_camera_image()
+        Image.fromarray(rgb).save(name)
+        print(f"saved robot view: {os.path.abspath(name)}")
+    except Exception as exc:
+        print(f"failed to save robot view {name}: {exc}")
 
 
 def _save_third_view(env, name: str) -> None:
     from PIL import Image
     from isaacsim.core.utils.viewports import set_camera_view
 
-    set_camera_view(
-        eye=[1.0, -4.5, 2.2],
-        target=[1.8, 0.0, 1.1],
-        up=[0.0, 0.0, 1.0],
-        camera_prim_path="/World/Camera",
-    )
-    for _ in range(5):
-        env.world.step(render=True)
-    rgb = env.camera.get_rgb()
-    Image.fromarray(rgb).save(name)
-    print(f"saved third view: {os.path.abspath(name)}")
+    try:
+        set_camera_view(
+            eye=[1.0, -4.5, 2.2],
+            target=[1.8, 0.0, 1.1],
+            up=[0.0, 0.0, 1.0],
+            camera_prim_path="/World/Camera",
+        )
+        for _ in range(5):
+            env.world.step(render=True)
+        rgb = env.camera.get_rgb()
+        Image.fromarray(rgb).save(name)
+        print(f"saved third view: {os.path.abspath(name)}")
+    except Exception as exc:
+        print(f"failed to save third view {name}: {exc}")
 
 
 def main() -> int:
