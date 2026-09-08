@@ -408,13 +408,18 @@ class AgentAPI:
                     action_name = parsed.get("action")
                     scene = parsed.get("scene_description")
                     reasoning = parsed.get("reasoning")
-                    if (
-                        action_name in ACTIONS
-                        and isinstance(scene, str)
-                        and scene.strip()
-                        and isinstance(reasoning, str)
-                        and reasoning.strip()
-                    ):
+                    if action_name in ACTIONS:
+                        if not (isinstance(scene, str) and scene.strip()):
+                            self._log(
+                                "MODEL RESPONSE (no scene_description, accepted):\n"
+                                + str(response)
+                            )
+                        else:
+                            self._log(f"MODEL RESPONSE:\n{response}")
+                        if isinstance(reasoning, str) and reasoning.strip():
+                            parsed.setdefault("reasoning", reasoning)
+                        return parsed
+                    if isinstance(scene, str) and scene.strip():
                         self._log(f"MODEL RESPONSE:\n{response}")
                         return parsed
                     self._log(
