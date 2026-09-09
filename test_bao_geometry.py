@@ -204,7 +204,10 @@ class ProtocolMemoryTest(unittest.TestCase):
             session_memory=["Episode 0 outcome: success=False, steps=30"],
             max_steps=30,
         )
-        self.assertIn("Previous completed episodes:", prompt)
+        self.assertIn(
+            "Previous completed episodes are your own prior experience",
+            prompt,
+        )
         self.assertIn("Episode 0 outcome: success=False", prompt)
 
     def test_session_summary_is_compact_and_factual(self) -> None:

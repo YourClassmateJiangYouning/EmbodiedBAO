@@ -208,13 +208,15 @@ def build_prompt(
 ) -> str:
     """Build the per-level prompt text for one decision step."""
     if level == 4:
-        parts = [
-            LEVEL0_FULL_PROMPT if phase == "A" else LEVEL4_PHASE_B_PROMPT,
-            CONTROL_MANUAL,
-            VISUAL_ANALYSIS_INSTRUCTION,
-        ]
+        parts = [LEVEL0_FULL_PROMPT if phase == "A" else LEVEL4_PHASE_B_PROMPT]
         if session_memory:
-            parts.append("Previous completed episodes:\n" + "\n".join(session_memory))
+            parts.append(
+                "Previous completed episodes are your own prior experience in "
+                "this benchmark. Use them to guide your decisions, but keep "
+                "checking the current image and state:\n"
+                + "\n".join(session_memory)
+            )
+        parts.extend([CONTROL_MANUAL, VISUAL_ANALYSIS_INSTRUCTION])
         if history:
             lines = ["Action history (most recent first):"]
             for item in list(history)[-12:][::-1]:
@@ -319,13 +321,16 @@ def build_prompt(
         "You perceive the scene through your head camera and control your body "
         "with discrete actions.",
         LEVEL_PROMPTS[level],
-        CONTROL_MANUAL,
-        VISUAL_ANALYSIS_INSTRUCTION,
     ]
-
     if session_memory:
-        lines.append("Previous completed episodes:")
+        lines.append(
+            "Previous completed episodes are your own prior experience in "
+            "this benchmark. Use them to guide your decisions, but keep "
+            "checking the current image and state:"
+        )
         lines.extend(session_memory)
+    lines.append(CONTROL_MANUAL)
+    lines.append(VISUAL_ANALYSIS_INSTRUCTION)
 
     if history:
         lines.append("Action history (most recent first):")
