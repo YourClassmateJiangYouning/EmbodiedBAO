@@ -702,10 +702,15 @@ class BAOExperimentRunner:
 
     def _level0_primed_memory(self, episode: Dict[str, Any]) -> str:
         """Build the primed-cell memory from the full Level0 tutorial."""
+        status = (
+            "successfully"
+            if bool(episode.get("success"))
+            else "without success"
+        )
         return (
-            "Level 0 tutorial (completed successfully in this model session):\n"
+            f"Level 0 tutorial (completed {status} in this model session):\n"
             + LEVEL0_FULL_PROMPT
-            + "\n\nRecorded successful Level 0 execution:\n"
+            + "\n\nRecorded Level 0 execution:\n"
             + self._session_episode_summary(episode)
         )
 
@@ -741,6 +746,14 @@ class BAOExperimentRunner:
             raise ValueError(
                 "run_level_ablation requires one successful Level 0 episode "
                 "per round when primed cells are enabled"
+            )
+        if needs_primed and level0_episodes is not None and any(
+            not bool(episode.get("success"))
+            for episode in level0_episodes[:rounds]
+        ):
+            raise ValueError(
+                "primed cells require successful Level0 episodes; "
+                "rerun Level0 or use a valid saved result"
             )
         channel_width = float(channel_width)
         target_phase = "B" if level == 4 else None

@@ -66,8 +66,8 @@ def load_saved_level0_episodes(
 ) -> List[Dict[str, Any]]:
     """Load saved Level0 episodes so primed cells can resume without rerunning."""
     model_dir = os.path.join(results_root, "level0", model)
-    paths = glob.glob(os.path.join(model_dir, "round*", "episode_*.json"))
-    paths += glob.glob(os.path.join(model_dir, "episode_*.json"))
+    paths = glob.glob(os.path.join(model_dir, "round*", "episode_000.json"))
+    paths += glob.glob(os.path.join(model_dir, "episode_000.json"))
     episodes: List[Dict[str, Any]] = []
     seen: set[str] = set()
     for path in sorted(paths):
