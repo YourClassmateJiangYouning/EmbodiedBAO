@@ -1226,7 +1226,7 @@ class BAOEnv:
         """Robot eye anchor: on the body, at the green ball height."""
         root = self._root_position()
         forward = _forward_vector(np.radians(self._robot_yaw))
-        height = float(self.task_dict.get("camera_height", 2.2))
+        height = float(self.task_dict.get("camera_height", 1.9))
         offset = float(self.task_dict.get("eye_forward_offset", 0.0))
         return np.array([root[0], height, root[2]], dtype=float) + forward * offset
 
