@@ -44,26 +44,24 @@ EXPLORATORY_ACTIONS = {"backward", "left", "right", "turn_left", "turn_right"}
 def load_episodes(results_root: str, level: int, model: str) -> List[Dict[str, Any]]:
     """Load and sort per-episode JSON files for one model at one level."""
     base = os.path.join(results_root, f"level{level}", model, "round*")
-    patterns = [
-        os.path.join(base, "episode_*.json"),
-        os.path.join(base, "*_episode_*.json"),
-    ]
+    plain_paths = glob.glob(os.path.join(base, "episode_*.json"))
+    prefixed_paths = glob.glob(os.path.join(base, "*_episode_*.json"))
+    paths = prefixed_paths if prefixed_paths else plain_paths
     episodes: List[Dict[str, Any]] = []
     seen: set[str] = set()
-    for pattern in patterns:
-        for path in glob.glob(pattern):
-            if path in seen:
-                continue
-            seen.add(path)
-            with open(path, "r", encoding="utf-8") as handle:
-                episode = json.load(handle)
-            if not episode.get("condition"):
-                basename = os.path.basename(path)
-                if basename.startswith("cold_episode_"):
-                    episode["condition"] = "cold"
-                elif basename.startswith("primed_episode_"):
-                    episode["condition"] = "primed"
-            episodes.append(episode)
+    for path in paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        with open(path, "r", encoding="utf-8") as handle:
+            episode = json.load(handle)
+        if not episode.get("condition"):
+            basename = os.path.basename(path)
+            if basename.startswith("cold_episode_"):
+                episode["condition"] = "cold"
+            elif basename.startswith("primed_episode_"):
+                episode["condition"] = "primed"
+        episodes.append(episode)
     if not episodes:
         legacy_pattern = os.path.join(
             results_root, f"level{level}", model, "episode_*.json"
