@@ -72,6 +72,38 @@ ACTION_OPTIONS_STRING: str = "\n".join(
 )
 
 
+class ProtocolCheckpoint:
+    """Persistent completion state for pause/resume across experiment runs."""
+
+    def __init__(self, path: str, resume: bool = False) -> None:
+        self.path = path
+        self.completed: set[str] = set()
+        if resume and os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    data = json.load(handle)
+                self.completed = set(str(item) for item in data.get("completed", []))
+            except Exception:
+                self.completed = set()
+
+    def is_done(self, key: str) -> bool:
+        return key in self.completed
+
+    def mark(self, key: str) -> None:
+        self.completed.add(key)
+        directory = os.path.dirname(self.path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(self.path, "w", encoding="utf-8") as handle:
+            json.dump(
+                {
+                    "completed": sorted(self.completed),
+                },
+                handle,
+                indent=2,
+            )
+
+
 CONTROL_MANUAL = """Control manual:
 You are an egocentric humanoid robot. Forward/backward/left/right move relative to the direction your torso is currently facing.
 All action names and their exact effects are listed under Available actions.
@@ -558,6 +590,7 @@ class BAOExperimentRunner:
         levels: Sequence[int] = (0, 1, 2, 3, 4, 5),
         episodes_per_level: int = 1,
         rounds: int = 3,
+        checkpoint: Optional[ProtocolCheckpoint] = None,
     ) -> Dict[int, List[Dict[str, Any]]]:
         results: Dict[int, List[Dict[str, Any]]] = {}
         if 0 not in levels and any(int(level) in (1, 2, 3, 4) for level in levels):
@@ -571,17 +604,20 @@ class BAOExperimentRunner:
                     rounds=rounds,
                     channel_width=0.60 if int(level) == 4 else 0.38,
                     level0_episodes=results.get(0, []),
+                    checkpoint=checkpoint,
                 )
             elif int(level) == 5:
                 results[int(level)] = self.run_level_5(
                     rounds=rounds,
                     episodes_per_round=10,
+                    checkpoint=checkpoint,
                 )
             else:
                 results[int(level)] = self.run_level(
                     level=int(level),
                     episodes=episodes_per_level,
                     rounds=rounds,
+                    checkpoint=checkpoint,
                 )
         return results
 
@@ -593,6 +629,7 @@ class BAOExperimentRunner:
         progress_callback: Optional[
             Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
         ] = None,
+        checkpoint: Optional[ProtocolCheckpoint] = None,
     ) -> List[Dict[str, Any]]:
         self._restore_default_channel_width()
         all_episodes: List[Dict[str, Any]] = []
@@ -602,6 +639,23 @@ class BAOExperimentRunner:
         for round_id in range(int(rounds)):
             round_episodes: List[Dict[str, Any]] = []
             for episode_id in range(episodes_per_round):
+                unit_key = (
+                    f"level{level}/round{round_id}/episode{episode_id}"
+                )
+                if checkpoint is not None and checkpoint.is_done(unit_key):
+                    print(
+                        f"[checkpoint] skip {unit_key} "
+                        "(already completed)"
+                    )
+                    saved_result = self._load_saved_episode(
+                        level,
+                        round_id,
+                        episode_id,
+                    )
+                    if saved_result is not None:
+                        round_episodes.append(saved_result)
+                        all_episodes.append(saved_result)
+                    continue
                 episode_result = self._run_episode(
                     level=level,
                     episode_id=episode_id,
@@ -610,6 +664,8 @@ class BAOExperimentRunner:
                 round_episodes.append(episode_result)
                 all_episodes.append(episode_result)
                 self._save_episode(episode_result)
+                if checkpoint is not None:
+                    checkpoint.mark(unit_key)
                 completed += 1
                 print(
                     f"[level {level} round {round_id}] episode {episode_id + 1}/"
@@ -624,7 +680,8 @@ class BAOExperimentRunner:
                         episode_result,
                         all_episodes,
                     )
-            self._save_summary(level, round_id, round_episodes)
+            if round_episodes:
+                self._save_summary(level, round_id, round_episodes)
         return all_episodes
 
     def run_level_5(
@@ -634,6 +691,7 @@ class BAOExperimentRunner:
         progress_callback: Optional[
             Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
         ] = None,
+        checkpoint: Optional[ProtocolCheckpoint] = None,
     ) -> List[Dict[str, Any]]:
         """Run repeated episodes in one shared session to build a memory curve.
 
@@ -655,6 +713,29 @@ class BAOExperimentRunner:
             session_memory: List[str] = []
             round_episodes: List[Dict[str, Any]] = []
             for episode_id in range(episodes_per_round):
+                unit_key = f"level5/round{round_id}/episode{episode_id}"
+                if checkpoint is not None and checkpoint.is_done(unit_key):
+                    saved_result = self._load_saved_episode(
+                        5,
+                        round_id,
+                        episode_id,
+                    )
+                    if saved_result is not None:
+                        saved_memory = saved_result.get("memory_summary")
+                        if not saved_memory:
+                            saved_memory = self._session_episode_summary(
+                                saved_result
+                            )
+                        session_memory.append(saved_memory)
+                        if len(session_memory) > 12:
+                            del session_memory[:-12]
+                        all_episodes.append(saved_result)
+                        round_episodes.append(saved_result)
+                    print(
+                        f"[checkpoint] skip {unit_key} "
+                        "(already completed)"
+                    )
+                    continue
                 episode_result = self._run_episode(
                     level=5,
                     episode_id=episode_id,
@@ -671,6 +752,8 @@ class BAOExperimentRunner:
                 round_episodes.append(episode_result)
                 all_episodes.append(episode_result)
                 self._save_episode(episode_result)
+                if checkpoint is not None:
+                    checkpoint.mark(unit_key)
                 completed += 1
                 print(
                     f"[level 5 round {round_id}] episode {episode_id + 1}/"
@@ -685,7 +768,8 @@ class BAOExperimentRunner:
                         episode_result,
                         all_episodes,
                     )
-            self._save_summary(5, round_id, round_episodes)
+            if round_episodes:
+                self._save_summary(5, round_id, round_episodes)
         return all_episodes
 
     def _level0_primed_memory(self, episode: Dict[str, Any]) -> str:
@@ -712,6 +796,7 @@ class BAOExperimentRunner:
         progress_callback: Optional[
             Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
         ] = None,
+        checkpoint: Optional[ProtocolCheckpoint] = None,
     ) -> List[Dict[str, Any]]:
         """Run one target level as cold vs Level 0-primed paired cells.
 
@@ -750,8 +835,20 @@ class BAOExperimentRunner:
         total = rounds * len(cells)
         self.env.set_channel_width(channel_width)
 
-        def run_cold(round_id: int) -> Dict[str, Any]:
+        def run_cold(round_id: int) -> Optional[Dict[str, Any]]:
             nonlocal completed
+            unit_key = f"level{level}/round{round_id}/cold"
+            if checkpoint is not None and checkpoint.is_done(unit_key):
+                print(f"[checkpoint] skip {unit_key} (already completed)")
+                saved_result = self._load_saved_episode(
+                    level,
+                    round_id,
+                    0,
+                    condition="cold",
+                )
+                if saved_result is not None:
+                    all_episodes.append(saved_result)
+                return None
             episode_result = self._run_episode(
                 level=level,
                 episode_id=0,
@@ -765,6 +862,8 @@ class BAOExperimentRunner:
             )
             all_episodes.append(episode_result)
             self._save_episode(episode_result)
+            if checkpoint is not None:
+                checkpoint.mark(unit_key)
             self._save_summary(level, round_id, [episode_result])
             completed += 1
             print(
@@ -782,8 +881,20 @@ class BAOExperimentRunner:
                 )
             return episode_result
 
-        def run_primed(round_id: int) -> Dict[str, Any]:
+        def run_primed(round_id: int) -> Optional[Dict[str, Any]]:
             nonlocal completed
+            unit_key = f"level{level}/round{round_id}/primed"
+            if checkpoint is not None and checkpoint.is_done(unit_key):
+                print(f"[checkpoint] skip {unit_key} (already completed)")
+                saved_result = self._load_saved_episode(
+                    level,
+                    round_id,
+                    0,
+                    condition="primed",
+                )
+                if saved_result is not None:
+                    all_episodes.append(saved_result)
+                return None
             level0_episode = level0_episodes[round_id]  # type: ignore[index]
             memory_summary = self._level0_primed_memory(level0_episode)
             agent_log = os.path.join(
@@ -817,6 +928,8 @@ class BAOExperimentRunner:
             episode_result["level0_memory_summary"] = memory_summary
             all_episodes.append(episode_result)
             self._save_episode(episode_result)
+            if checkpoint is not None:
+                checkpoint.mark(unit_key)
             self._save_summary(level, round_id, [episode_result])
             completed += 1
             print(
@@ -1291,6 +1404,37 @@ class BAOExperimentRunner:
         )
         os.makedirs(path, exist_ok=True)
         return path
+
+    def _saved_episode_path(
+        self,
+        level: int,
+        round_id: int,
+        episode_id: int,
+        condition: Optional[str] = None,
+    ) -> str:
+        condition_prefix = f"{condition}_" if condition else ""
+        return os.path.join(
+            self._result_dir(level, round_id),
+            f"{condition_prefix}episode_{episode_id:03d}.json",
+        )
+
+    def _load_saved_episode(
+        self,
+        level: int,
+        round_id: int,
+        episode_id: int,
+        condition: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        path = self._saved_episode_path(
+            level,
+            round_id,
+            episode_id,
+            condition=condition,
+        )
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
 
     def _save_episode(self, episode: Dict[str, Any]) -> None:
         condition = episode.get("condition")

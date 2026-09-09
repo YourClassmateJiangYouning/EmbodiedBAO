@@ -64,6 +64,11 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--tag", type=str, default="", help="Optional run tag")
     parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from the saved checkpoint instead of restarting this run",
+    )
+    parser.add_argument(
         "--env_config",
         type=str,
         default="{}",
@@ -262,7 +267,7 @@ def main() -> None:
 
         import ai_agent
         import environment
-        from experiments import BAOExperimentRunner
+        from experiments import BAOExperimentRunner, ProtocolCheckpoint
 
         task_dict = json.loads(args.env_config)
         task_dict["headless"] = args.headless
@@ -283,6 +288,33 @@ def main() -> None:
         runner.save_args(args)
         _write_progress("runner created")
         timestamp = time.strftime("%Y%m%d-%H%M%S")
+        safe_model = args.model.replace("/", "-").replace("\\", "-")
+        plan_name = "-".join(str(level) for level in levels)
+        mode_parts: List[str] = []
+        if args.cold_only:
+            mode_parts.append("cold")
+        if args.primed_only:
+            mode_parts.append("primed")
+        if args.use_saved_level0:
+            mode_parts.append("saved")
+        if not mode_parts:
+            mode_parts.append("full")
+        checkpoint_dir = os.path.join("results", safe_model)
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        checkpoint_path = os.path.join(
+            checkpoint_dir,
+            f"checkpoint_{plan_name}_{'_'.join(mode_parts)}.json",
+        )
+        checkpoint = ProtocolCheckpoint(
+            path=checkpoint_path,
+            resume=args.resume,
+        )
+        if args.resume and checkpoint.completed:
+            print(
+                f"[checkpoint] resumed with "
+                f"{len(checkpoint.completed)} completed units"
+            )
+        _write_progress(f"checkpoint path: {checkpoint_path}")
         level0_episodes: List[Dict[str, Any]] = []
         if (
             0 not in levels
@@ -303,6 +335,7 @@ def main() -> None:
                     progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
                         lvl, completed, total, episodes_done
                     ),
+                    checkpoint=checkpoint,
                 )
                 level0_episodes = episodes
                 csv_path = save_episodes_csv(
@@ -317,6 +350,7 @@ def main() -> None:
                     channel_width=0.60 if level == 4 else 0.38,
                     level0_episodes=level0_episodes,
                     cells=cells,
+                    checkpoint=checkpoint,
                 )
                 csv_path = save_episodes_csv(
                     episodes,
@@ -358,6 +392,7 @@ def main() -> None:
                     progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
                         lvl, completed, total, episodes_done
                     ),
+                    checkpoint=checkpoint,
                 )
                 csv_path = save_episodes_csv(
                     episodes, model=args.model, level=level, timestamp=timestamp

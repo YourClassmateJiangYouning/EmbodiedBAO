@@ -111,6 +111,17 @@ Run multiple saved-level0 paired levels in one process:
 %ISAACSIM_ROOT%\python.bat main.py --model gpt-4o --levels 2 3 4 --use-saved-level0 --headless
 ```
 
+Any run can be interrupted and resumed with the same command plus `--resume`:
+
+```text
+%ISAACSIM_ROOT%\python.bat main.py --model gemini-2.5-pro --all-levels --resume --headless
+```
+
+Checkpoints are stored under
+`results/{model}/checkpoint_*_*.json` and are marked only after an episode is
+fully saved. Level 0 must complete its three rounds before paired Level 1-4
+cells can use its memory. Level 5 runs independently with its own memory.
+
 Level 5 repeated-episode memory experiment:
 
 ```text
