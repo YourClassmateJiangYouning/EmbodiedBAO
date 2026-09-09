@@ -700,6 +700,15 @@ class BAOExperimentRunner:
             self._save_summary(5, round_id, round_episodes)
         return all_episodes
 
+    def _level0_primed_memory(self, episode: Dict[str, Any]) -> str:
+        """Build the primed-cell memory from the full Level0 tutorial."""
+        return (
+            "Level 0 tutorial (completed successfully in this model session):\n"
+            + LEVEL0_FULL_PROMPT
+            + "\n\nRecorded successful Level 0 execution:\n"
+            + self._session_episode_summary(episode)
+        )
+
     def run_level_ablation(
         self,
         level: int,
@@ -775,7 +784,7 @@ class BAOExperimentRunner:
         def run_primed(round_id: int) -> Dict[str, Any]:
             nonlocal completed
             level0_episode = level0_episodes[round_id]  # type: ignore[index]
-            memory_summary = self._session_episode_summary(level0_episode)
+            memory_summary = self._level0_primed_memory(level0_episode)
             agent_log = os.path.join(
                 self.log_dir,
                 f"round{round_id}_level{level}_primed_session_agent.txt",
