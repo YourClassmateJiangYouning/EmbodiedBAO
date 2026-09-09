@@ -194,14 +194,21 @@ def main() -> None:
         for level in levels:
             _write_progress(f"level {level} start")
             if level == 4:
-                episodes = runner.run_level_4(
-                    phase_a_initial=args.phase_a_initial,
-                    phase_a_max=args.phase_a_max,
-                    phase_b_episodes=args.phase_b_episodes,
-                    progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
-                        lvl, completed, total, episodes_done
-                    ),
+                level0_episodes, phase_b_episodes = runner.run_level_0_4(
+                    rounds=args.rounds
                 )
+                for save_level, save_episodes in (
+                    (0, level0_episodes),
+                    (4, phase_b_episodes),
+                ):
+                    csv_path = save_episodes_csv(
+                        save_episodes,
+                        model=args.model,
+                        level=save_level,
+                        timestamp=timestamp,
+                    )
+                    print(f"[main] saved {csv_path}")
+                    _write_progress(f"csv saved: {csv_path}")
             else:
                 episodes = runner.run_level(
                     level=level,
@@ -211,11 +218,11 @@ def main() -> None:
                         lvl, completed, total, episodes_done
                     ),
                 )
-            csv_path = save_episodes_csv(
-                episodes, model=args.model, level=level, timestamp=timestamp
-            )
-            print(f"[main] saved {csv_path}")
-            _write_progress(f"csv saved: {csv_path}")
+                csv_path = save_episodes_csv(
+                    episodes, model=args.model, level=level, timestamp=timestamp
+                )
+                print(f"[main] saved {csv_path}")
+                _write_progress(f"csv saved: {csv_path}")
         _write_progress("all levels done")
     except Exception as exc:
         _write_progress(f"ERROR: {type(exc).__name__}: {exc}")

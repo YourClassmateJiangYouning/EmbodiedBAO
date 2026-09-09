@@ -645,6 +645,68 @@ class BAOExperimentRunner:
         )
         return all_episodes
 
+    def run_level_0_4(
+        self, rounds: int = 3
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Run Level 0 then Level 4 Phase B in the same session per round."""
+        level0_episodes: List[Dict[str, Any]] = []
+        phase_b_episodes: List[Dict[str, Any]] = []
+        for round_id in range(int(rounds)):
+            self.env.set_channel_width(0.38)
+            agent_log = os.path.join(
+                self.log_dir, f"round{round_id}_level0_4_session_agent.txt"
+            )
+            agent = AgentAdapter(model=self.model, log_file=agent_log)
+            shared_history: List[Dict[str, str]] = []
+            session_memory: List[str] = []
+
+            level0 = self._run_episode(
+                level=0,
+                episode_id=0,
+                round_id=round_id,
+                agent=agent,
+                shared_history=shared_history,
+                session_memory=session_memory,
+            )
+            self._save_episode(level0)
+            self._save_summary(0, round_id, [level0])
+            level0_episodes.append(level0)
+            session_memory.append(
+                f"Level0 Episode: success={level0['success']}, "
+                f"steps={len(level0['steps'])}, "
+                f"max_side_rotation={self._max_abs_yaw(level0['steps']):.0f} deg"
+            )
+            print(
+                f"[level0_4 round {round_id}] Level 0 finished: "
+                f"success={level0['success']} steps={len(level0['steps'])}"
+            )
+
+            self.env.set_channel_width(0.60)
+            phase_b = self._run_episode(
+                level=4,
+                episode_id=0,
+                round_id=round_id,
+                phase="B",
+                channel_width=0.60,
+                agent=agent,
+                shared_history=shared_history,
+                session_memory=session_memory,
+            )
+            phase_b["sideways_rate"] = self._compute_sideways_rate(
+                phase_b["steps"]
+            )
+            self._save_episode(phase_b)
+            self._save_level4_phase_summary(
+                "B", round_id, [phase_b], 0.60
+            )
+            phase_b_episodes.append(phase_b)
+            print(
+                f"[level0_4 round {round_id}] Level 4B finished: "
+                f"success={phase_b['success']} steps={len(phase_b['steps'])} "
+                f"sideways_rate={phase_b['sideways_rate']:.3f}"
+            )
+        return level0_episodes, phase_b_episodes
+
     @staticmethod
     def _compute_sideways_rate(steps: Sequence[Dict[str, Any]]) -> float:
         if not steps:
