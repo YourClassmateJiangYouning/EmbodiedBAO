@@ -51,20 +51,20 @@ from environment import ACTIONS
 
 
 ACTION_DESCRIPTIONS: Dict[str, str] = {
-    "forward": "translate 5 cm in the current facing direction",
-    "backward": "translate 5 cm opposite to the current facing direction",
-    "left": "translate 5 cm to the left of the current facing direction",
-    "right": "translate 5 cm to the right of the current facing direction",
-    "turn_left": "rotate the torso 15 degrees counterclockwise around +y",
-    "turn_right": "rotate the torso 15 degrees clockwise around +y",
-    "reach_left_arm": "extend the whole left arm straight forward",
-    "retreat_left_arm": "return the left arm to natural hanging",
-    "reach_right_arm": "extend the whole right arm straight forward",
-    "retreat_right_arm": "return the right arm to natural hanging",
-    "look_left": "rotate the robot camera 30 degrees to the left",
-    "look_right": "rotate the robot camera 30 degrees to the right",
-    "raise_left_arm": "raise the whole left arm straight out to the left side",
-    "raise_right_arm": "raise the whole right arm straight out to the right side",
+    "forward": "move forward 5 cm",
+    "backward": "move backward 5 cm",
+    "left": "move left 5 cm",
+    "right": "move right 5 cm",
+    "turn_left": "rotate left 15 degrees",
+    "turn_right": "rotate right 15 degrees",
+    "reach_left_arm": "extend left arm forward",
+    "retreat_left_arm": "return left arm to natural hanging",
+    "reach_right_arm": "extend right arm forward",
+    "retreat_right_arm": "return right arm to natural hanging",
+    "look_left": "rotate camera left 30 degrees",
+    "look_right": "rotate camera right 30 degrees",
+    "raise_left_arm": "raise left arm straight out to the left",
+    "raise_right_arm": "raise right arm straight out to the right",
 }
 
 ACTION_OPTIONS_STRING: str = "\n".join(
@@ -74,20 +74,7 @@ ACTION_OPTIONS_STRING: str = "\n".join(
 
 CONTROL_MANUAL = """Control manual:
 You are an egocentric humanoid robot. Forward/backward/left/right move relative to the direction your torso is currently facing.
-- forward: move forward 5 cm
-- backward: move backward 5 cm
-- left: move left 5 cm
-- right: move right 5 cm
-- turn_left: rotate your torso 15 degrees counterclockwise
-- turn_right: rotate your torso 15 degrees clockwise
-- reach_left_arm: extend your whole left arm straight forward
-- retreat_left_arm: return your left arm to natural hanging
-- reach_right_arm: extend your whole right arm straight forward
-- retreat_right_arm: return your right arm to natural hanging
-- raise_left_arm: raise your whole left arm straight out to the left
-- raise_right_arm: raise your whole right arm straight out to the right
-- look_left: rotate your camera 30 degrees to the left
-- look_right: rotate your camera 30 degrees to the right
+All action names and their exact effects are listed under Available actions.
 
 Your goal is to touch the green ball with a hand. An episode counts as successful only when a hand reaches the ball."""
 
@@ -145,22 +132,20 @@ Step 3: Execute backward about 4 steps to make room
 Step 4: Execute turn_left 6 times so you are sideways
 Step 5: Execute right 5 times, then execute raise_right_arm to touch the ball
 
-【Available Actions】
-You must respond with a JSON object containing scene_description, reasoning, action and confidence:
-{"action": "forward"}  - move forward 5cm
-{"action": "backward"} - move backward 5cm
-{"action": "left"}     - move left 5cm
-{"action": "right"}    - move right 5cm
-{"action": "turn_left"} - rotate body 15 degrees counterclockwise
-{"action": "turn_right"} - rotate body 15 degrees clockwise
-{"action": "reach_left_arm"} - extend whole left arm straight forward
-{"action": "retreat_left_arm"} - return left arm to natural hanging
-{"action": "reach_right_arm"} - extend whole right arm straight forward
-{"action": "retreat_right_arm"} - return right arm to natural hanging
-{"action": "look_left"} - rotate camera 30 degrees left
-{"action": "look_right"} - rotate camera 30 degrees right
-{"action": "raise_left_arm"} - raise whole left arm straight out to left
-{"action": "raise_right_arm"} - raise whole right arm straight out to right"""
+"""
+
+# Compact primed memory: facts and route only, without repeated action/JSON text.
+LEVEL0_TUTORIAL_MEMORY = """Level 0 task facts:
+- Transparent wall spans the scene at x=2.0m and is 2.0m tall.
+- The wall has one vertical opening centered at z=0, 0.38m wide.
+- Shoulder width is 0.57m and body thickness sideways is 0.22m.
+- Shoulder width > opening, so forward passage is blocked.
+- Side thickness < opening, so sideways passage works.
+- Arm length is 0.338m and the green ball is 0.40m behind the wall,
+  so the ball cannot be touched from the front side.
+- Green ball position: x=2.4m, z=0, height 1.2m.
+- Working route: forward 7, reach_right_arm, retreat_right_arm,
+  backward 4, turn_left 6, right 5, raise_right_arm."""
 
 LEVEL_PROMPTS: Dict[int, str] = {
     0: LEVEL0_FULL_PROMPT,
@@ -251,18 +236,17 @@ def build_prompt(
                 ]
             )
         )
-        if phase != "A":
-            parts.extend(
-                [
-                    "Available actions:",
-                    options,
-                    (
-                        'Reply with exactly one JSON object: '
-                        '{"scene_description": "<text>", "reasoning": "<text>", '
-                        '"action": "<action>", "confidence": 0.0-1.0}.'
-                    ),
-                ]
-            )
+        parts.extend(
+            [
+                "Available actions:",
+                options,
+                (
+                    'Reply with exactly one JSON object: '
+                    '{"scene_description": "<text>", "reasoning": "<text>", '
+                    '"action": "<action>", "confidence": 0.0-1.0}.'
+                ),
+            ]
+        )
         return "\n\n".join(parts)
 
     if level == 0:
@@ -313,6 +297,17 @@ def build_prompt(
                     f"You have at most {max_steps} steps in this episode.",
                 ]
             )
+        )
+        parts.extend(
+            [
+                "Available actions:",
+                options,
+                (
+                    'Reply with exactly one JSON object: '
+                    '{"scene_description": "<text>", "reasoning": "<text>", '
+                    '"action": "<action>", "confidence": 0.0-1.0}.'
+                ),
+            ]
         )
         return "\n\n".join(parts)
 
@@ -709,7 +704,7 @@ class BAOExperimentRunner:
         )
         return (
             f"Level 0 tutorial (completed {status} in this model session):\n"
-            + LEVEL0_FULL_PROMPT
+            + LEVEL0_TUTORIAL_MEMORY
             + "\n\nRecorded Level 0 execution:\n"
             + self._session_episode_summary(episode)
         )

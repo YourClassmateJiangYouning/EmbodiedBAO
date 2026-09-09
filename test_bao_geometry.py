@@ -231,6 +231,24 @@ class ProtocolMemoryTest(unittest.TestCase):
         self.assertIn("max_abs_torso_yaw=30", summary)
         self.assertIn("forward=2", summary)
 
+    def test_action_list_is_present_only_once(self) -> None:
+        state = {
+            "position": [1.5, 0.0, 0.0],
+            "orientation": {"yaw": 0.0},
+            "camera_yaw": 0.0,
+            "raised_arm": "none",
+            "distance_to_target": 0.7,
+        }
+        for level, phase in ((0, None), (1, None), (4, "B")):
+            prompt = build_prompt(
+                level=level,
+                state=state,
+                phase=phase,
+                max_steps=30,
+            )
+            self.assertEqual(prompt.count("1. forward -"), 1)
+            self.assertEqual(prompt.count("raise_right_arm -"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
