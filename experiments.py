@@ -105,6 +105,14 @@ LEVEL0_STAGE_ACTIONS = [
     ("raise_right_arm", 1),
 ]
 
+DEFAULT_MAX_STEPS_BY_LEVEL = {
+    0: 30,
+    1: 50,
+    2: 70,
+    3: 90,
+    4: 90,
+}
+
 
 LEVEL0_FULL_PROMPT = """You are a Unitree H1 humanoid robot in a simulation environment.
 
@@ -453,7 +461,7 @@ class BAOExperimentRunner:
         self,
         env: Any,
         model: str,
-        max_steps: int = 30,
+        max_steps: Optional[int] = None,
         max_image_history: int = 1,
         tag: Optional[str] = None,
         save_obs: bool = False,
@@ -463,7 +471,7 @@ class BAOExperimentRunner:
     ) -> None:
         self.env = env
         self.model = model.replace("/", "-")
-        self.max_steps = int(max_steps)
+        self.max_steps = int(max_steps) if max_steps is not None else None
         self.max_image_history = int(max_image_history)
         self.save_obs = bool(save_obs)
         self.seed = int(seed)
@@ -481,10 +489,15 @@ class BAOExperimentRunner:
     # Public entry points
     # ------------------------------------------------------------------
 
+    def _effective_max_steps(self, level: int) -> int:
+        if self.max_steps is not None:
+            return int(self.max_steps)
+        return int(DEFAULT_MAX_STEPS_BY_LEVEL.get(int(level), 30))
+
     def run_all(
         self,
         levels: Sequence[int] = (0, 1, 2, 3),
-        episodes_per_level: int = 5,
+        episodes_per_level: int = 1,
         rounds: int = 3,
     ) -> Dict[int, List[Dict[str, Any]]]:
         results: Dict[int, List[Dict[str, Any]]] = {}
@@ -499,7 +512,7 @@ class BAOExperimentRunner:
     def run_level(
         self,
         level: int,
-        episodes: int = 5,
+        episodes: int = 1,
         rounds: int = 3,
         progress_callback: Optional[
             Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
@@ -724,8 +737,9 @@ class BAOExperimentRunner:
         end_reason = "max_steps"
         level0_stage = 0
         level0_in_stage = 0
+        max_steps = self._effective_max_steps(level)
 
-        for step in range(self.max_steps):
+        for step in range(max_steps):
             rgb = self.env.get_camera_image()
             state = self.env.get_robot_state()
             state["distance_to_target"] = distance
@@ -738,7 +752,7 @@ class BAOExperimentRunner:
                 state=state,
                 history=history,
                 options=ACTION_OPTIONS_STRING,
-                max_steps=self.max_steps,
+                max_steps=max_steps,
                 phase=phase,
                 session_memory=session_memory,
             )
@@ -860,7 +874,7 @@ class BAOExperimentRunner:
             "total_steps": len(steps),
             "action_sequence": ",".join(action_sequence),
             "final_distance": self.env.get_distance_to_target(),
-            "max_steps": self.max_steps,
+            "max_steps": max_steps,
             "end_reason": end_reason,
             "wall_collision_count": wall_collision_count,
             "invalid_response_count": sum(
@@ -947,9 +961,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the BAO four-level protocol.")
     parser.add_argument("--model", type=str, required=True, help="Model name passed to ai_agent")
     parser.add_argument("--levels", type=int, nargs="+", default=[0, 1, 2, 3])
-    parser.add_argument("--episodes", type=int, default=5, help="Episodes per round")
+    parser.add_argument("--episodes", type=int, default=1, help="Episodes per round")
     parser.add_argument("--rounds", type=int, default=3, help="Repeated rounds per model")
-    parser.add_argument("--max_steps", type=int, default=30)
+    parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--max_image_history", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--tag", type=str, default="", help="Log/result tag")

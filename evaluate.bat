@@ -8,7 +8,7 @@ if "%~1"=="" (
 
 set "model=%~1"
 set "episodes=%~2"
-if "%episodes%"=="" set "episodes=5"
+if "%episodes%"=="" set "episodes=1"
 
 echo Running EmbodiedBAO full evaluation for model: %model% (episodes=%episodes%)
 %ISAACSIM_ROOT%\python.bat main.py --model %model% --all-levels --episodes %episodes% --headless

@@ -93,7 +93,7 @@ reachable joints).
 Single level:
 
 ```text
-%ISAACSIM_ROOT%\python.bat main.py --model gpt-4o --level 0 --episodes 5 --headless
+%ISAACSIM_ROOT%\python.bat main.py --model gpt-4o --level 0 --headless
 ```
 
 All levels:
@@ -223,7 +223,9 @@ Outputs:
   with a 0.38m channel, then phase B silently widens the channel to 0.60m
   and only asks the agent to reach the ball. The session agent and history
   are not reset between phases.
-- Each level runs `--rounds x --episodes` episodes (default 3 rounds x 5).
+- Each level runs `--rounds x --episodes` episodes (default 3 rounds x 1).
+- Per-level max steps: Level 0 = 30, Level 1 = 50, Level 2 = 70,
+  Level 3 = 90 unless `--max_steps` is provided.
   Each episode has at most 30 steps and ends only on success or step
   exhaustion; wall collisions are recorded but do not terminate.
 - Per-step loop: `get_camera_image -> get_robot_state -> build prompt ->
@@ -277,7 +279,7 @@ Outputs:
 ## main.py
 
 - Arguments: `--model` (default gpt-4o), `--level 0-3` (default 0),
-  `--episodes` (default 5 per round), `--rounds` (default 3), `--all-levels`, plus
+  `--episodes` (default 1 per round), `--rounds` (default 3), `--all-levels`, plus
   `--max_steps/--headless/--tag`.
 - Flow: `environment.setup_scene()` initializes the scene,
   `ai_agent.create_agent(model=...)` creates the agent,

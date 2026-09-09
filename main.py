@@ -28,14 +28,14 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--level", type=int, choices=[0, 1, 2, 3, 4], default=0, help="Level to run"
     )
-    parser.add_argument("--episodes", type=int, default=5, help="Episodes per round")
+    parser.add_argument("--episodes", type=int, default=1, help="Episodes per round")
     parser.add_argument(
         "--rounds", type=int, default=3, help="Repeated rounds per model"
     )
     parser.add_argument(
         "--all-levels", action="store_true", help="Run levels 0, 1, 2, 3"
     )
-    parser.add_argument("--max_steps", type=int, default=30)
+    parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--phase_a_initial", type=int, default=10)
     parser.add_argument("--phase_a_max", type=int, default=20)
     parser.add_argument("--phase_b_episodes", type=int, default=20)
