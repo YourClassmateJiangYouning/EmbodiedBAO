@@ -284,8 +284,14 @@ class _OpenAICompatCompletions:
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=self._client._timeout) as response:
-            data = json.loads(response.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(request, timeout=self._client._timeout) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"HTTP {exc.code}: {exc.reason}; body={body[:2000]}"
+            ) from exc
         content = data["choices"][0]["message"]["content"]
         return _OpenAICompatResponse(content)
 
