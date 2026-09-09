@@ -95,6 +95,16 @@ scene_description must describe the current image, not repeat the task text.
 Output exactly one JSON object:
 {"scene_description": "...", "reasoning": "...", "action": "<action>", "confidence": 0.0-1.0}"""
 
+LEVEL0_STAGE_ACTIONS = [
+    ("forward", 7),
+    ("reach_right_arm", 1),
+    ("retreat_right_arm", 1),
+    ("backward", 4),
+    ("turn_left", 6),
+    ("right", 5),
+    ("raise_right_arm", 1),
+]
+
 
 LEVEL0_FULL_PROMPT = """You are a Unitree H1 humanoid robot in a simulation environment.
 
@@ -246,6 +256,15 @@ def build_prompt(
                 "Do not repeat it. Stop pushing forward; turn left/right or "
                 "move backward first."
             )
+        if "level0_stage" in state:
+            stage = int(state["level0_stage"])
+            required = str(state["level0_required_action"])
+            if stage < len(LEVEL0_STAGE_ACTIONS):
+                parts.append(
+                    f"Current Level 0 stage {stage + 1}/{len(LEVEL0_STAGE_ACTIONS)}: "
+                    f"execute {required} now. Do not execute other actions until "
+                    "this stage is complete."
+                )
         position = state.get("position", [0.0, 0.0, 0.0])
         yaw = float(
             state.get(
@@ -703,11 +722,16 @@ class BAOExperimentRunner:
         total_llm_time_ms = 0.0
         success = False
         end_reason = "max_steps"
+        level0_stage = 0
+        level0_in_stage = 0
 
         for step in range(self.max_steps):
             rgb = self.env.get_camera_image()
             state = self.env.get_robot_state()
             state["distance_to_target"] = distance
+            if level == 0:
+                state["level0_stage"] = level0_stage
+                state["level0_required_action"] = LEVEL0_STAGE_ACTIONS[level0_stage][0]
 
             prompt = build_prompt(
                 level=level,
@@ -721,9 +745,22 @@ class BAOExperimentRunner:
             action_name, raw_response, latency_ms = agent.query(prompt, rgb, state)
             total_llm_time_ms += latency_ms
 
-            if action_name is None:
-                action_taken = "invalid"
-                feedback = "invalid action response"
+            stage_required: Optional[str] = None
+            if level == 0 and level0_stage < len(LEVEL0_STAGE_ACTIONS):
+                stage_required = LEVEL0_STAGE_ACTIONS[level0_stage][0]
+
+            if action_name is None or (
+                stage_required is not None and action_name != stage_required
+            ):
+                action_taken = "invalid" if action_name is None else action_name
+                feedback = (
+                    "invalid action response"
+                    if action_name is None
+                    else (
+                        f"Level 0 stage {level0_stage + 1} requires "
+                        f"{stage_required}; action not executed"
+                    )
+                )
                 collision_info: Optional[Dict[str, Any]] = None
                 collided = False
                 distance = self.env.get_distance_to_target()
@@ -743,6 +780,19 @@ class BAOExperimentRunner:
                     point = self.env.get_collision_position()
                     if point is not None:
                         collision_info = {"point": point}
+                if (
+                    level == 0
+                    and stage_required == action_name
+                    and result.legal
+                ):
+                    level0_in_stage += 1
+                    required_count = LEVEL0_STAGE_ACTIONS[level0_stage][1]
+                    if (
+                        level0_in_stage >= required_count
+                        and level0_stage < len(LEVEL0_STAGE_ACTIONS) - 1
+                    ):
+                        level0_stage += 1
+                        level0_in_stage = 0
             if collided:
                 wall_collision_count += 1
 
