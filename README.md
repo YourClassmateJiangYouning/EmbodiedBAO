@@ -37,8 +37,6 @@ BAO task?
 4. `ai_agent.py` - unified MLLM interface.
 5. `analysis.py` - Step-ness, strategy switching, exploratory behavior, and
    one-shot adjustment metrics.
-6. `run_models_smoke.py` - one quick episode per supported MLLM using a
-   single Isaac Sim session.
 
 ## Installation
 
@@ -74,19 +72,6 @@ BAO task?
   `$ISAACSIM_ROOT/python.sh convert_h1_urdf.py /path/to/h1_with_hand.urdf
   /path/to/output/h1.usd`. Then point `EMBODIEDBAO_H1_USD` at the output
   file or place it at `assets/H1/h1.usd`.
-
-## H1 Robot Data
-
-To inspect the loaded H1 model (stage up axis, links, joints, joint axes,
-limits, drive settings, bounding box), run:
-
-```text
-$ISAACSIM_ROOT/python.sh inspect_h1.py /path/to/h1.usd --json h1_info.json
-```
-
-The output is a JSON report that can be used to verify the robot's actual
-kinematics against the task assumptions (shoulder width, torso thickness,
-reachable joints).
 
 ## Usage
 
@@ -136,13 +121,6 @@ Batch evaluation:
 
 - Windows: `evaluate.bat MODEL_NAME [EPISODES]`
 - Linux: `./evaluate.sh MODEL_NAME [EPISODES]`
-
-All-model smoke test:
-
-```text
-$ISAACSIM_ROOT/python.sh run_models_smoke.py --headless \
-    --env_config '{"robot_physics":true}'
-```
 
 Analysis:
 
