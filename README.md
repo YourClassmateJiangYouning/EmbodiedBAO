@@ -175,7 +175,7 @@ Outputs:
   passage. Body dimensions are the hidden knowledge of the task.
 - The tiered protocol follows MirrorBench prompt ablation:
   - Level 0: full guidance (wall, channel, body size, sideways strategy)
-    plus the full 5-step solution.
+    plus the short 3-step sideways solution.
   - Level 1: wall and a narrow opening disclosed, no solution.
   - Level 2: wall disclosed, no opening information.
   - Level 3: wall disclosed and no target-behind-wall prior.
@@ -226,7 +226,7 @@ Outputs:
 ## experiments.py
 
 - Level 0 (guided tutorial): wall, 380mm opening, 570mm shoulder width,
-  90-degree sideways strategy, and the full 5-step solution are disclosed.
+  90-degree sideways strategy, and the short 3-step solution are disclosed.
 - Level 1 (cold/primed): narrow opening disclosed; primed condition receives
   the successful Level 0 tutorial memory.
 - Level 2 (cold/primed): wall disclosed but no opening; primed condition

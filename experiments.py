@@ -85,12 +85,8 @@ Output exactly one JSON object:
 {"scene_description": "...", "reasoning": "...", "action": "<action>", "confidence": 0.0-1.0}"""
 
 LEVEL0_STAGE_ACTIONS = [
-    ("forward", 7),
-    ("reach_right_arm", 1),
-    ("retreat_right_arm", 1),
-    ("backward", 4),
     ("turn_left", 6),
-    ("right", 5),
+    ("right", 8),
     ("raise_right_arm", 1),
 ]
 
@@ -106,31 +102,29 @@ DEFAULT_MAX_STEPS_BY_LEVEL = {
 
 LEVEL0_FULL_PROMPT = """You are a Unitree H1 humanoid robot in a simulation environment.
 
-【Scene Description】
-A transparent wall spans the entire 4m × 4m scene at x=2.0m, dividing it into front and back halves.
+Scene description:
+A transparent wall spans the entire 4m x 4m scene at x=2.0m, dividing it into front and back halves.
 - The wall is 2.0m tall and extends from z=-2.0m to z=2.0m
 - In the center of the wall at z=0, there is a vertical opening (passage) that goes from the floor to the top of the wall
 - The opening is 0.38m wide
 
-【Your Body Parameters】
+Body parameters:
 - Shoulder width: 0.57m
 - Body thickness (sideways): 0.22m
 - Arm length: 0.338m
 
-【Critical Understanding】
-- Shoulder width (0.57m) > opening width (0.38m) → You CANNOT pass through facing forward
-- Body thickness (0.22m) < opening width (0.38m) → You CAN pass through if you turn sideways
-- Arm length (0.338m) < distance from wall to ball (0.40m) → You CANNOT reach the ball from the front
+Critical understanding:
+- Shoulder width (0.57m) > opening width (0.38m) -> You CANNOT pass through facing forward
+- Body thickness (0.22m) < opening width (0.38m) -> You CAN pass through if you turn sideways
+- Arm length (0.338m) < distance from wall to ball (0.40m) -> You CANNOT reach the ball from the front
 
-【Task】
+Task:
 A green ball is located behind the wall at x=2.4m, z=0, height 1.2m. Reach the green ball.
 
-【Complete Solution - Follow These Steps】
-Step 1: Move forward about 7 steps until you reach the wall edge
-Step 2: Execute reach_right_arm once, then execute retreat_right_arm
-Step 3: Execute backward about 4 steps to make room
-Step 4: Execute turn_left 6 times so you are sideways
-Step 5: Execute right 5 times, then execute raise_right_arm to touch the ball
+Complete solution - follow these steps:
+Step 1: Execute turn_left 6 times so you are sideways
+Step 2: Execute right 8 times to move sideways through the opening
+Step 3: Execute raise_right_arm to touch the ball
 
 """
 
@@ -144,8 +138,7 @@ LEVEL0_TUTORIAL_MEMORY = """Level 0 task facts:
 - Arm length is 0.338m and the green ball is 0.40m behind the wall,
   so the ball cannot be touched from the front side.
 - Green ball position: x=2.4m, z=0, height 1.2m.
-- Working route: forward 7, reach_right_arm, retreat_right_arm,
-  backward 4, turn_left 6, right 5, raise_right_arm."""
+- Working route: turn_left 6, right 8, raise_right_arm."""
 
 LEVEL_PROMPTS: Dict[int, str] = {
     0: LEVEL0_FULL_PROMPT,
