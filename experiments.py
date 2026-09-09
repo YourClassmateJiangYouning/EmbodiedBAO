@@ -706,6 +706,7 @@ class BAOExperimentRunner:
         rounds: int = 3,
         channel_width: float = 0.38,
         level0_episodes: Optional[Sequence[Dict[str, Any]]] = None,
+        cells: Sequence[str] = ("cold", "primed"),
         progress_callback: Optional[
             Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
         ] = None,
@@ -721,20 +722,26 @@ class BAOExperimentRunner:
         if level not in (1, 2, 3, 4):
             raise ValueError("run_level_ablation supports levels 1, 2, 3, 4")
         rounds = max(1, int(rounds))
-        if level0_episodes is None or len(level0_episodes) < rounds:
+        cells = list(cells)
+        if not cells or not set(cells).issubset({"cold", "primed"}):
+            raise ValueError("cells must contain only 'cold' and/or 'primed'")
+        needs_primed = "primed" in cells
+        if needs_primed and (
+            level0_episodes is None or len(level0_episodes) < rounds
+        ):
             raise ValueError(
                 "run_level_ablation requires one successful Level 0 episode "
-                "per round for primed cells"
+                "per round when primed cells are enabled"
             )
         channel_width = float(channel_width)
         target_phase = "B" if level == 4 else None
         all_episodes: List[Dict[str, Any]] = []
         completed = 0
-        total = rounds * 2
-
-        # Cold condition.
+        total = rounds * len(cells)
         self.env.set_channel_width(channel_width)
-        for round_id in range(rounds):
+
+        def run_cold(round_id: int) -> Dict[str, Any]:
+            nonlocal completed
             episode_result = self._run_episode(
                 level=level,
                 episode_id=0,
@@ -763,10 +770,11 @@ class BAOExperimentRunner:
                     episode_result,
                     all_episodes,
                 )
+            return episode_result
 
-        # Primed condition: inject the shared Level 0 memory from this round.
-        for round_id in range(rounds):
-            level0_episode = level0_episodes[round_id]
+        def run_primed(round_id: int) -> Dict[str, Any]:
+            nonlocal completed
+            level0_episode = level0_episodes[round_id]  # type: ignore[index]
             memory_summary = self._session_episode_summary(level0_episode)
             agent_log = os.path.join(
                 self.log_dir,
@@ -779,8 +787,6 @@ class BAOExperimentRunner:
                 f"success={level0_episode['success']} "
                 f"steps={len(level0_episode['steps'])}"
             )
-
-            self.env.set_channel_width(channel_width)
             episode_result = self._run_episode(
                 level=level,
                 episode_id=0,
@@ -816,6 +822,13 @@ class BAOExperimentRunner:
                     episode_result,
                     all_episodes,
                 )
+            return episode_result
+
+        for round_id in range(rounds):
+            if "cold" in cells:
+                run_cold(round_id)
+            if "primed" in cells:
+                run_primed(round_id)
         return all_episodes
 
     def run_level_4(

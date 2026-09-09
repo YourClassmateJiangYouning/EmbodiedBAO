@@ -112,6 +112,14 @@ Running `--level 1`, `--level 2`, `--level 3`, or `--level 4` now runs the
 cold and Level 0-primed paired cells for that level. The required Level 0
 memory is produced first in the same process.
 
+To resume only the primed cells with already-saved Level0 episodes:
+
+```text
+%ISAACSIM_ROOT%\python.bat main.py --model gpt-4o --level 1 --primed-only --headless
+```
+
+Use `--cold-only` when only the no-memory condition needs rerunning.
+
 Level 5 repeated-episode memory experiment:
 
 ```text

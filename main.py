@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import glob
 import json
 import os
 import time
@@ -36,6 +37,16 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--all-levels", action="store_true", help="Run levels 0, 1, 2, 3, 4, 5"
     )
+    parser.add_argument(
+        "--cold-only",
+        action="store_true",
+        help="Run only cold cells for the selected Level 1-4 target",
+    )
+    parser.add_argument(
+        "--primed-only",
+        action="store_true",
+        help="Run only Level0-primed cells using saved Level0 episodes",
+    )
     parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--tag", type=str, default="", help="Optional run tag")
@@ -46,6 +57,33 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         help='JSON dict passed to BAOEnv, e.g. \'{"rendermode":"RaytracedLighting","spp":4}\'',
     )
     return parser.parse_args(argv)
+
+
+def load_saved_level0_episodes(
+    model: str,
+    rounds: int,
+    results_root: str = "results",
+) -> List[Dict[str, Any]]:
+    """Load saved Level0 episodes so primed cells can resume without rerunning."""
+    model_dir = os.path.join(results_root, "level0", model)
+    paths = glob.glob(os.path.join(model_dir, "round*", "episode_*.json"))
+    paths += glob.glob(os.path.join(model_dir, "episode_*.json"))
+    episodes: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for path in sorted(paths):
+        if path in seen:
+            continue
+        seen.add(path)
+        with open(path, "r", encoding="utf-8") as handle:
+            episodes.append(json.load(handle))
+    episodes.sort(key=lambda ep: int(ep.get("round", 0)))
+    episodes = episodes[: int(rounds)]
+    if len(episodes) < int(rounds):
+        raise RuntimeError(
+            f"Need {rounds} saved Level0 episodes under {model_dir}; "
+            f"found {len(episodes)}. Finish Level0 first or run without --primed-only."
+        )
+    return episodes
 
 
 def save_episodes_csv(
@@ -158,9 +196,22 @@ def _write_progress(message: str) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.cold_only and args.primed_only:
+        raise ValueError("--cold-only and --primed-only cannot be used together")
+    if args.all_levels and (args.cold_only or args.primed_only):
+        raise ValueError("--cold-only/--primed-only cannot be combined with --all-levels")
+    if (args.cold_only or args.primed_only) and args.level not in (1, 2, 3, 4):
+        raise ValueError("--cold-only/--primed-only require --level 1, 2, 3, or 4")
+
+    cells: List[str] = ["cold", "primed"]
+    if args.cold_only:
+        cells = ["cold"]
+    if args.primed_only:
+        cells = ["primed"]
+
     if args.all_levels:
         levels = [0, 1, 2, 3, 4, 5]
-    elif args.level in (1, 2, 3, 4):
+    elif args.level in (1, 2, 3, 4) and not args.primed_only and not args.cold_only:
         levels = [0, args.level]
     else:
         levels = [args.level]
@@ -217,11 +268,18 @@ def main() -> None:
                 print(f"[main] saved {csv_path}")
                 _write_progress(f"csv saved: {csv_path}")
             elif level in (1, 2, 3, 4):
+                ablation_level0 = level0_episodes
+                if args.primed_only:
+                    ablation_level0 = load_saved_level0_episodes(
+                        model=args.model,
+                        rounds=args.rounds,
+                    )
                 episodes = runner.run_level_ablation(
                     level=level,
                     rounds=args.rounds,
                     channel_width=0.60 if level == 4 else 0.38,
-                    level0_episodes=level0_episodes,
+                    level0_episodes=ablation_level0,
+                    cells=cells,
                 )
                 csv_path = save_episodes_csv(
                     episodes,
@@ -249,14 +307,14 @@ def main() -> None:
                     if primed_episodes
                     else 0.0
                 )
-                print(
-                    f"[main] level {level}: cold={cold_rate:.3f} "
-                    f"primed={primed_rate:.3f}"
-                )
-                _write_progress(
-                    f"level {level}: cold_success={cold_rate:.3f} "
-                    f"primed_success={primed_rate:.3f}"
-                )
+                summary_parts: List[str] = []
+                if cold_episodes:
+                    summary_parts.append(f"cold={cold_rate:.3f}")
+                if primed_episodes:
+                    summary_parts.append(f"primed={primed_rate:.3f}")
+                summary_text = " ".join(summary_parts)
+                print(f"[main] level {level}: {summary_text}")
+                _write_progress(f"level {level}: {summary_text}")
             elif level == 5:
                 episodes = runner.run_level_5(
                     rounds=args.rounds,
