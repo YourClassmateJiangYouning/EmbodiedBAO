@@ -162,11 +162,18 @@ You must respond with a JSON object containing scene_description, reasoning, act
 LEVEL_PROMPTS: Dict[int, str] = {
     0: LEVEL0_FULL_PROMPT,
     1: (
-        "There is a transparent wall across the entire scene with a narrow vertical opening "
-        "in the center. You need to get the green ball behind the wall."
+        "There is a transparent wall blocking the direct path to the green ball. "
+        "There is a narrow vertical opening somewhere in it. You need to get the "
+        "green ball behind the wall."
     ),
-    2: "Your task is to reach the green ball in front of you.",
-    3: "Your task is to reach the green ball in front of you.",
+    2: (
+        "A transparent wall blocks the direct path to the green ball behind it. "
+        "Explore the scene and touch the green ball."
+    ),
+    3: (
+        "A transparent wall blocks the direct path to the green ball. "
+        "Explore the scene and touch the green ball."
+    ),
 }
 
 LEVEL4_PHASE_B_PROMPT = "Your task is to reach the green ball in front of you."
