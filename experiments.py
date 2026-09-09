@@ -3,11 +3,11 @@
 Implements the Body-as-Obstacle benchmark protocol for an MLLM-powered
 Unitree H1 agent:
 
-    Level 0  Guided Solution          (wall/channel/solution + full CoT)
-    Level 1  Autonomous Reasoning     (wall/channel known, no solution)
-    Level 2  Implicit Obstacle        (generic task only)
-    Level 3  Self-Referential Adjust  (generic task only, minimal priors)
-    Level 4  Guided memory phase       (0.38m guide -> 0.60m transfer)
+    Level 0  Guided tutorial          (full solution for 0.38m channel)
+    Level 1  Wall + opening disclosed (cold / Level0-primed)
+    Level 2  Wall disclosed           (cold / Level0-primed)
+    Level 3  Wall only                (cold / Level0-primed)
+    Level 4  Widened 0.60m channel    (cold / Level0-primed)
     Level 5  Insight curve            (ten remembered episodes per round)
 
 Every episode resets the Isaac Sim scene, runs at most ``max_steps``
@@ -109,10 +109,10 @@ LEVEL0_STAGE_ACTIONS = [
 
 DEFAULT_MAX_STEPS_BY_LEVEL = {
     0: 30,
-    1: 50,
-    2: 70,
-    3: 90,
-    4: 90,
+    1: 30,
+    2: 30,
+    3: 30,
+    4: 30,
     5: 30,
 }
 
@@ -562,11 +562,12 @@ class BAOExperimentRunner:
     ) -> Dict[int, List[Dict[str, Any]]]:
         results: Dict[int, List[Dict[str, Any]]] = {}
         for level in levels:
-            if int(level) == 4:
-                phase_a_episodes, phase_b_episodes = self.run_level_4_memory(
-                    rounds=rounds
+            if int(level) in (1, 2, 3, 4):
+                results[int(level)] = self.run_level_ablation(
+                    level=int(level),
+                    rounds=rounds,
+                    channel_width=0.60 if int(level) == 4 else 0.38,
                 )
-                results[int(level)] = phase_a_episodes + phase_b_episodes
             elif int(level) == 5:
                 results[int(level)] = self.run_level_5(
                     rounds=rounds,
@@ -681,6 +682,131 @@ class BAOExperimentRunner:
                         all_episodes,
                     )
             self._save_summary(5, round_id, round_episodes)
+        return all_episodes
+
+    def run_level_ablation(
+        self,
+        level: int,
+        rounds: int = 3,
+        channel_width: float = 0.38,
+        progress_callback: Optional[
+            Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
+        ] = None,
+    ) -> List[Dict[str, Any]]:
+        """Run one target level as cold vs Level 0-primed paired cells.
+
+        Cold cells run the target without prior Level 0 experience. Primed
+        cells first complete the staged Level 0 tutorial in the same agent
+        session, then reset to the target scene with that episode summary in
+        memory. Level 4 uses the widened channel for the target while the
+        tutorial remains the narrow 0.38m route.
+        """
+        if level not in (1, 2, 3, 4):
+            raise ValueError("run_level_ablation supports levels 1, 2, 3, 4")
+        rounds = max(1, int(rounds))
+        channel_width = float(channel_width)
+        target_phase = "B" if level == 4 else None
+        all_episodes: List[Dict[str, Any]] = []
+        completed = 0
+        total = rounds * 2
+
+        # Cold condition.
+        self.env.set_channel_width(channel_width)
+        for round_id in range(rounds):
+            episode_result = self._run_episode(
+                level=level,
+                episode_id=0,
+                round_id=round_id,
+                phase=target_phase,
+                channel_width=channel_width,
+                condition="cold",
+            )
+            episode_result["sideways_rate"] = self._compute_sideways_rate(
+                episode_result["steps"]
+            )
+            all_episodes.append(episode_result)
+            self._save_episode(episode_result)
+            self._save_summary(level, round_id, [episode_result])
+            completed += 1
+            print(
+                f"[level {level} cold round {round_id}] "
+                f"success={episode_result['success']} "
+                f"sideways_rate={episode_result['sideways_rate']:.3f} "
+                f"steps={len(episode_result['steps'])}"
+            )
+            if progress_callback is not None:
+                progress_callback(
+                    completed,
+                    total,
+                    episode_result,
+                    all_episodes,
+                )
+
+        # Primed condition: Level 0 tutorial, then target in the same session.
+        for round_id in range(rounds):
+            self.env.set_channel_width(0.38)
+            agent_log = os.path.join(
+                self.log_dir,
+                f"round{round_id}_level{level}_primed_session_agent.txt",
+            )
+            agent = AgentAdapter(model=self.model, log_file=agent_log)
+            shared_history: List[Dict[str, str]] = []
+            session_memory: List[str] = []
+
+            tutorial = self._run_episode(
+                level=0,
+                episode_id=0,
+                round_id=round_id,
+                channel_width=0.38,
+                condition="primed_tutorial",
+                agent=agent,
+                shared_history=shared_history,
+                session_memory=session_memory,
+            )
+            tutorial["sideways_rate"] = self._compute_sideways_rate(
+                tutorial["steps"]
+            )
+            memory_summary = self._session_episode_summary(tutorial)
+            session_memory.append(memory_summary)
+            print(
+                f"[level {level} primed round {round_id}] Level0 tutorial "
+                f"success={tutorial['success']} steps={len(tutorial['steps'])}"
+            )
+
+            self.env.set_channel_width(channel_width)
+            episode_result = self._run_episode(
+                level=level,
+                episode_id=0,
+                round_id=round_id,
+                phase=target_phase,
+                channel_width=channel_width,
+                condition="primed",
+                agent=agent,
+                shared_history=shared_history,
+                session_memory=session_memory,
+            )
+            episode_result["sideways_rate"] = self._compute_sideways_rate(
+                episode_result["steps"]
+            )
+            episode_result["level0_tutorial_success"] = bool(tutorial["success"])
+            episode_result["level0_tutorial_summary"] = memory_summary
+            all_episodes.append(episode_result)
+            self._save_episode(episode_result)
+            self._save_summary(level, round_id, [episode_result])
+            completed += 1
+            print(
+                f"[level {level} primed round {round_id}] "
+                f"success={episode_result['success']} "
+                f"sideways_rate={episode_result['sideways_rate']:.3f} "
+                f"steps={len(episode_result['steps'])}"
+            )
+            if progress_callback is not None:
+                progress_callback(
+                    completed,
+                    total,
+                    episode_result,
+                    all_episodes,
+                )
         return all_episodes
 
     def run_level_4(
@@ -934,14 +1060,17 @@ class BAOExperimentRunner:
         round_id: int = 0,
         phase: Optional[str] = None,
         channel_width: Optional[float] = None,
+        condition: Optional[str] = None,
         agent: Optional[AgentAdapter] = None,
         shared_history: Optional[List[Dict[str, str]]] = None,
         session_memory: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         if agent is None:
+            condition_prefix = f"{condition}_" if condition else ""
             agent_log = os.path.join(
                 self.log_dir,
-                f"round{round_id}_level{level}_episode{episode_id:03d}_agent.txt",
+                f"round{round_id}_level{level}_{condition_prefix}"
+                f"episode{episode_id:03d}_agent.txt",
             )
             agent = AgentAdapter(model=self.model, log_file=agent_log)
         history: List[Dict[str, str]] = (
@@ -1053,6 +1182,7 @@ class BAOExperimentRunner:
                 "level": level,
                 "model_name": self.model,
                 "round": round_id,
+                "condition": condition,
                 "phase": phase,
                 "channel_width": channel_width,
                 "step": step,
@@ -1083,7 +1213,14 @@ class BAOExperimentRunner:
                 image_history = image_history[-self.max_image_history :]
 
             if self.save_obs:
-                self._save_observation(round_id, episode_id, step, action_taken, rgb)
+                self._save_observation(
+                    round_id,
+                    episode_id,
+                    step,
+                    action_taken,
+                    rgb,
+                    condition=condition,
+                )
 
             if step_success:
                 success = True
@@ -1095,6 +1232,7 @@ class BAOExperimentRunner:
             "level": level,
             "model_name": self.model,
             "round": round_id,
+            "condition": condition,
             "phase": phase,
             "channel_width": channel_width,
             "success": success,
@@ -1123,9 +1261,11 @@ class BAOExperimentRunner:
         return path
 
     def _save_episode(self, episode: Dict[str, Any]) -> None:
+        condition = episode.get("condition")
+        condition_prefix = f"{condition}_" if condition else ""
         path = os.path.join(
             self._result_dir(episode["level"], episode.get("round", 0)),
-            f"episode_{episode['episode_id']:03d}.json",
+            f"{condition_prefix}episode_{episode['episode_id']:03d}.json",
         )
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(episode, handle, indent=2, ensure_ascii=False)
@@ -1133,8 +1273,11 @@ class BAOExperimentRunner:
     def _save_summary(
         self, level: int, round_id: int, episodes: List[Dict[str, Any]]
     ) -> None:
+        condition = episodes[0].get("condition") if episodes else None
+        condition_prefix = f"{condition}_" if condition else ""
         path = os.path.join(
-            self._result_dir(level, round_id), f"summary_{self.tag}.json"
+            self._result_dir(level, round_id),
+            f"{condition_prefix}summary_{self.tag}.json",
         )
         with open(path, "w", encoding="utf-8") as handle:
             json.dump(self._summarize(level, episodes), handle, indent=2, ensure_ascii=False)
@@ -1146,12 +1289,15 @@ class BAOExperimentRunner:
         step: int,
         action: str,
         rgb: np.ndarray,
+        condition: Optional[str] = None,
     ) -> None:
         from PIL import Image
 
+        condition_prefix = f"{condition}_" if condition else ""
         path = os.path.join(
             self.obs_dir,
-            f"round{round_id}_ep{episode_id:03d}_step{step:02d}_{action}.png",
+            f"round{round_id}_{condition_prefix}"
+            f"ep{episode_id:03d}_step{step:02d}_{action}.png",
         )
         Image.fromarray(rgb).save(path)
 
@@ -1171,6 +1317,7 @@ class BAOExperimentRunner:
         return {
             "level": level,
             "model_name": episodes[0]["model_name"],
+            "condition": episodes[0].get("condition"),
             "rounds": sorted({int(e.get("round", 0)) for e in episodes}),
             "episodes": len(episodes),
             "success_rate": float(np.mean([e["success"] for e in episodes])),
@@ -1223,11 +1370,12 @@ def main() -> None:
         )
         runner.save_args(args)
         for level in args.levels:
-            if level == 4:
-                phase_a_episodes, phase_b_episodes = runner.run_level_4_memory(
-                    rounds=args.rounds
+            if level in (1, 2, 3, 4):
+                episodes = runner.run_level_ablation(
+                    level=level,
+                    rounds=args.rounds,
+                    channel_width=0.60 if level == 4 else 0.38,
                 )
-                episodes = phase_a_episodes + phase_b_episodes
             elif level == 5:
                 episodes = runner.run_level_5(
                     rounds=args.rounds,

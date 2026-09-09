@@ -43,13 +43,27 @@ EXPLORATORY_ACTIONS = {"backward", "left", "right", "turn_left", "turn_right"}
 
 def load_episodes(results_root: str, level: int, model: str) -> List[Dict[str, Any]]:
     """Load and sort per-episode JSON files for one model at one level."""
-    pattern = os.path.join(
-        results_root, f"level{level}", model, "round*", "episode_*.json"
-    )
+    base = os.path.join(results_root, f"level{level}", model, "round*")
+    patterns = [
+        os.path.join(base, "episode_*.json"),
+        os.path.join(base, "*_episode_*.json"),
+    ]
     episodes: List[Dict[str, Any]] = []
-    for path in glob.glob(pattern):
-        with open(path, "r", encoding="utf-8") as handle:
-            episodes.append(json.load(handle))
+    seen: set[str] = set()
+    for pattern in patterns:
+        for path in glob.glob(pattern):
+            if path in seen:
+                continue
+            seen.add(path)
+            with open(path, "r", encoding="utf-8") as handle:
+                episode = json.load(handle)
+            if not episode.get("condition"):
+                basename = os.path.basename(path)
+                if basename.startswith("cold_episode_"):
+                    episode["condition"] = "cold"
+                elif basename.startswith("primed_episode_"):
+                    episode["condition"] = "primed"
+            episodes.append(episode)
     if not episodes:
         legacy_pattern = os.path.join(
             results_root, f"level{level}", model, "episode_*.json"
@@ -79,7 +93,13 @@ def discover_models(results_root: str, level: int) -> List[str]:
         has_episodes = any(
             glob.glob(os.path.join(model_dir, "round*", "episode_*.json"))
         ) or any(
-            fname.startswith("episode_") and fname.endswith(".json")
+            glob.glob(os.path.join(model_dir, "round*", "*_episode_*.json"))
+        ) or any(
+            (
+                fname.startswith("episode_")
+                or "_episode_" in fname
+            )
+            and fname.endswith(".json")
             for fname in os.listdir(model_dir)
         )
         if has_episodes:
@@ -497,6 +517,7 @@ def table_row(analysis: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "model": analysis["model"],
         "level": analysis["level"],
+        "condition": "all",
         "round": "all",
         "episodes": analysis["episodes"],
         "step_ness": step["step_ness"],
@@ -519,6 +540,7 @@ def format_markdown_table(rows: Sequence[Dict[str, Any]]) -> str:
     header = [
         "Model",
         "Level",
+        "Condition",
         "Round",
         "Step-ness",
         "Step Class",
@@ -535,6 +557,7 @@ def format_markdown_table(rows: Sequence[Dict[str, Any]]) -> str:
         values = [
             str(row["model"]),
             str(row["level"]),
+            str(row.get("condition", "all")),
             str(row.get("round", "all")),
             f"{row['step_ness']:.4f}",
             row["step_ness_class"],
@@ -696,18 +719,20 @@ def main() -> int:
             print(f"[analysis] skip {model}: no episodes")
             continue
         safe_model = model.replace("/", "-").replace("\\", "-")
-        groups: List[Tuple[Optional[int], List[Dict[str, Any]]]] = []
-        if args.per_round or args.level == 5:
-            by_round: Dict[int, List[Dict[str, Any]]] = {}
-            for episode in episodes:
-                by_round.setdefault(int(episode.get("round", 0)), []).append(episode)
-            groups = sorted(
-                (round_id, group) for round_id, group in by_round.items()
+        groups: List[Tuple[Optional[str], int, List[Dict[str, Any]]]] = []
+        by_group: Dict[Tuple[Optional[str], int], List[Dict[str, Any]]] = {}
+        for episode in episodes:
+            key = (
+                episode.get("condition"),
+                int(episode.get("round", 0)),
             )
-        else:
-            groups = [(None, episodes)]
+            by_group.setdefault(key, []).append(episode)
+        groups = sorted(
+            (condition, round_id, group)
+            for (condition, round_id), group in by_group.items()
+        )
 
-        for round_id, group in groups:
+        for condition, round_id, group in groups:
             analysis = analyze_episodes(
                 group,
                 model=model,
@@ -720,10 +745,12 @@ def main() -> int:
                 gradual_adjust_threshold=args.gradual_adjust_threshold,
             )
             row = table_row(analysis)
+            row["condition"] = condition if condition is not None else "none"
             row["round"] = round_id if round_id is not None else "all"
             rows.append(row)
 
-            round_suffix = f"_round{round_id}" if round_id is not None else ""
+            condition_text = condition if condition is not None else "none"
+            round_suffix = f"_{condition_text}_round{round_id}"
             json_path = os.path.join(
                 args.out_dir,
                 f"analysis_level{args.level}_{safe_model}{round_suffix}.json",
@@ -731,7 +758,7 @@ def main() -> int:
             with open(json_path, "w", encoding="utf-8") as handle:
                 json.dump(analysis, handle, indent=2, ensure_ascii=False)
             print(
-                f"[analysis] {model} round={round_id}: "
+                f"[analysis] {model} condition={condition_text} round={round_id}: "
                 f"step_ness={analysis['step_ness']['step_ness']:.4f} "
                 f"({analysis['step_ness']['step_ness_class']}), "
                 f"switches={analysis['strategy_switches']['switch_count']}, "

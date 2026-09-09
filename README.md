@@ -108,6 +108,9 @@ Level 4 channel-widening experiment:
 %ISAACSIM_ROOT%\python.bat main.py --model gpt-4o --level 4 --headless
 ```
 
+Running `--level 1`, `--level 2`, `--level 3`, or `--level 4` now runs the
+cold and Level 0-primed paired cells for that level.
+
 Level 5 repeated-episode memory experiment:
 
 ```text
@@ -180,12 +183,13 @@ Outputs:
 - The tiered protocol follows MirrorBench prompt ablation:
   - Level 0: full guidance (wall, channel, body size, sideways strategy)
     plus the full 5-step solution.
-  - Level 1: wall and narrow opening disclosed; the agent must find the
-    sideways solution itself.
-  - Level 2: generic task only ("reach the green ball in front of you").
-  - Level 3: generic task only, with no target-behind-wall prior.
-  - Level 4: one staged guided 0.38m phase followed by a widened 0.60m phase
-    in the same session, saved only under Level 4.
+  - Level 1: wall and a narrow opening disclosed, no solution.
+  - Level 2: wall disclosed, no opening information.
+  - Level 3: wall disclosed and no target-behind-wall prior.
+  - Level 4: widened 0.60m channel task; the model only has to reach the ball.
+  - Levels 1-4 each run a cold cell and a Level 0-primed cell. Primed cells
+    first complete the staged 0.38m Level 0 tutorial in the same agent
+    session, then test the target task with that successful episode memory.
   - Level 5: wall disclosed, no width or solution; ten episodes per round
     with the same agent, shared action history, and compact per-episode
     memory so the learning curve can be measured per round.
@@ -228,26 +232,26 @@ Outputs:
 
 ## experiments.py
 
-- Level 0 (guided solution): wall, 380mm opening, 570mm shoulder width,
+- Level 0 (guided tutorial): wall, 380mm opening, 570mm shoulder width,
   90-degree sideways strategy, and the full 5-step solution are disclosed.
-- Level 1 (autonomous reasoning): wall and narrow opening disclosed, no
-  solution and no CoT.
-- Level 2 (implicit obstacle discovery): generic task only, no wall or
-  channel information.
-- Level 3 (self-referential body adjustment): generic task only, no wall,
-  channel, or target-behind-wall prior.
-- Level 4 (guided memory phase): phase A runs the staged Level 0 walk through
-  a 0.38m channel; phase B silently widens it to 0.60m and only asks the
-  agent to reach the ball. The agent and history are not reset between
-  phases, and all results are saved under Level 4.
+- Level 1 (cold/primed): narrow opening disclosed; primed condition receives
+  the successful Level 0 tutorial memory.
+- Level 2 (cold/primed): wall disclosed but no opening; primed condition
+  receives the successful Level 0 tutorial memory.
+- Level 3 (cold/primed): wall disclosed without target-behind-wall prior;
+  primed condition receives the successful Level 0 tutorial memory.
+- Level 4 (wide cold/primed): 0.60m channel. Cold runs without prior;
+  primed runs complete the 0.38m Level 0 tutorial first, then face the wider
+  channel. This measures whether the agent overgeneralizes the narrow-channel
+  sideways strategy or adapts to the wider opening.
 - Level 5 (insight curve): wall disclosed, ten 30-step episodes per round in
   one agent session. A summary of each completed episode is added to the next
   episode's prompt; each round starts fresh memory, producing a separate curve.
-- Levels 0-3 run `--rounds x --episodes` episodes (default 3 rounds x 1).
-  Level 4 runs one guided phase and one transfer phase per round. Level 5
-  runs ten episodes per round by default.
-- Per-level max steps: Level 0 = 30, Level 1 = 50, Level 2 = 70,
-  Level 3 = 90, Level 4 = 90, Level 5 = 30 unless `--max_steps` is provided.
+- Levels 1-4 run cold and primed cells, each for `--rounds` rounds with one
+  target episode per round. A primed round first runs the Level 0 tutorial in
+  the same session. Level 5 runs ten episodes per round by default.
+- Per-level max steps: all levels default to 30 unless `--max_steps` is
+  provided.
   Each episode has at most its configured max steps and ends only on success or step
   exhaustion; wall collisions are recorded but do not terminate.
 - Per-step loop: `get_camera_image -> get_robot_state -> build prompt ->
@@ -255,8 +259,10 @@ Outputs:
   check_collision_with_wall`. All specified fields are recorded, including
   `llm_response_time_ms` and `action_sequence`.
 - Outputs:
-  `results/level{level}/{model}/round*/episode_*.json`,
-  `results/level{level}/{model}/round*/summary_{tag}.json`, and
+  `results/level{level}/{model}/round*/episode_*.json` (no condition),
+  `results/level{level}/{model}/round*/cold_episode_*.json`,
+  `results/level{level}/{model}/round*/primed_episode_*.json`,
+  matching `cold_summary_{tag}.json` / `primed_summary_{tag}.json`, and
   `logs/{tag}/` (agent logs and optional observation PNGs).
 - Expected `ai_agent` interface:
   `ai_agent.get_action(prompt, image, state, history, options)`, or

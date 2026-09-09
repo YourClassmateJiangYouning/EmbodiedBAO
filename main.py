@@ -1,10 +1,10 @@
 """EmbodiedBAO program entry point.
 
 Usage:
-    python main.py --model gpt-4o --level 0 --episodes 50
+    python main.py --model gpt-4o --level 0
     python main.py --model gpt-4o --level 4
     python main.py --model gpt-4o --level 5
-    python main.py --model claude-3.5-sonnet --level 3 --episodes 50
+    python main.py --model claude-3.5-sonnet --level 3
     python main.py --model gemini-2.5-pro --all-levels
 
 Flow: initialize the Isaac Sim scene (environment.setup_scene), create the AI
@@ -68,6 +68,7 @@ def save_episodes_csv(
         "round",
         "episode_id",
         "level",
+        "condition",
         "model_name",
         "phase",
         "channel_width",
@@ -102,6 +103,9 @@ def save_episodes_csv(
                         "round": step.get("round", episode.get("round", 0)),
                         "episode_id": step.get("episode_id", episode.get("episode_id")),
                         "level": step.get("level", episode.get("level")),
+                        "condition": step.get(
+                            "condition", episode.get("condition")
+                        ),
                         "model_name": step.get("model_name", episode.get("model_name")),
                         "phase": step.get("phase", episode.get("phase")),
                         "channel_width": step.get(
@@ -194,11 +198,12 @@ def main() -> None:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         for level in levels:
             _write_progress(f"level {level} start")
-            if level == 4:
-                phase_a_episodes, phase_b_episodes = runner.run_level_4_memory(
-                    rounds=args.rounds
+            if level in (1, 2, 3, 4):
+                episodes = runner.run_level_ablation(
+                    level=level,
+                    rounds=args.rounds,
+                    channel_width=0.60 if level == 4 else 0.38,
                 )
-                episodes = phase_a_episodes + phase_b_episodes
                 csv_path = save_episodes_csv(
                     episodes,
                     model=args.model,
@@ -207,8 +212,36 @@ def main() -> None:
                 )
                 print(f"[main] saved {csv_path}")
                 _write_progress(f"csv saved: {csv_path}")
-            elif level == 5:
-                episodes = runner.run_level_5(
+                cold_episodes = [
+                    ep for ep in episodes if ep.get("condition") == "cold"
+                ]
+                primed_episodes = [
+                    ep for ep in episodes if ep.get("condition") == "primed"
+                ]
+                cold_rate = (
+                    sum(ep["success"] for ep in cold_episodes)
+                    / len(cold_episodes)
+                    if cold_episodes
+                    else 0.0
+                )
+                primed_rate = (
+                    sum(ep["success"] for ep in primed_episodes)
+                    / len(primed_episodes)
+                    if primed_episodes
+                    else 0.0
+                )
+                print(
+                    f"[main] level {level}: cold={cold_rate:.3f} "
+                    f"primed={primed_rate:.3f}"
+                )
+                _write_progress(
+                    f"level {level}: cold_success={cold_rate:.3f} "
+                    f"primed_success={primed_rate:.3f}"
+                )
+            elif level == 0:
+                episodes = runner.run_level(
+                    level=level,
+                    episodes=args.episodes,
                     rounds=args.rounds,
                     progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
                         lvl, completed, total, episodes_done
@@ -219,10 +252,8 @@ def main() -> None:
                 )
                 print(f"[main] saved {csv_path}")
                 _write_progress(f"csv saved: {csv_path}")
-            else:
-                episodes = runner.run_level(
-                    level=level,
-                    episodes=args.episodes,
+            elif level == 5:
+                episodes = runner.run_level_5(
                     rounds=args.rounds,
                     progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
                         lvl, completed, total, episodes_done
