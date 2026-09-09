@@ -1,4 +1,4 @@
-"""BAO four-level evaluation protocol.
+"""BAO tiered evaluation protocol.
 
 Implements the Body-as-Obstacle benchmark protocol for an MLLM-powered
 Unitree H1 agent:
@@ -7,6 +7,8 @@ Unitree H1 agent:
     Level 1  Autonomous Reasoning     (wall/channel known, no solution)
     Level 2  Implicit Obstacle        (generic task only)
     Level 3  Self-Referential Adjust  (generic task only, minimal priors)
+    Level 4  Guided memory phase       (0.38m guide -> 0.60m transfer)
+    Level 5  Insight curve            (ten remembered episodes per round)
 
 Every episode resets the Isaac Sim scene, runs at most ``max_steps``
 (default 30), and terminates only on task success or step exhaustion. Wall
@@ -111,6 +113,7 @@ DEFAULT_MAX_STEPS_BY_LEVEL = {
     2: 70,
     3: 90,
     4: 90,
+    5: 30,
 }
 
 
@@ -173,6 +176,12 @@ LEVEL_PROMPTS: Dict[int, str] = {
     3: (
         "A transparent wall blocks the direct path to the green ball. "
         "Explore the scene and touch the green ball."
+    ),
+    5: (
+        "A transparent wall blocks the direct path to the green ball. "
+        "You may run multiple episodes in one session; use what you learned "
+        "in previous episodes to improve. Explore the scene and touch the "
+        "green ball."
     ),
 }
 
@@ -313,6 +322,10 @@ def build_prompt(
         CONTROL_MANUAL,
         VISUAL_ANALYSIS_INSTRUCTION,
     ]
+
+    if session_memory:
+        lines.append("Previous completed episodes:")
+        lines.extend(session_memory)
 
     if history:
         lines.append("Action history (most recent first):")
@@ -484,6 +497,13 @@ class BAOExperimentRunner:
         self.seed = int(seed)
         self.rng = np.random.default_rng(self.seed)
         self.tag = tag or time.strftime("%Y%m%d-%H%M%S")
+        if hasattr(env, "get_channel_width"):
+            try:
+                self._default_channel_width = float(env.get_channel_width())
+            except Exception:
+                self._default_channel_width = 0.38
+        else:
+            self._default_channel_width = 0.38
         self.results_root = results_root
         self.logs_root = logs_root
         self.log_dir = os.path.join(logs_root, self.tag)
@@ -501,19 +521,63 @@ class BAOExperimentRunner:
             return int(self.max_steps)
         return int(DEFAULT_MAX_STEPS_BY_LEVEL.get(int(level), 30))
 
+    def _restore_default_channel_width(self) -> None:
+        if hasattr(self.env, "set_channel_width"):
+            self.env.set_channel_width(self._default_channel_width)
+
+    @staticmethod
+    def _session_episode_summary(episode: Dict[str, Any]) -> str:
+        """Compact factual summary appended to the next episode prompt."""
+        episode_id = int(episode.get("episode_id", 0))
+        success = bool(episode.get("success", False))
+        end_reason = str(episode.get("end_reason", "max_steps"))
+        steps = episode.get("steps", [])
+        max_abs_yaw = 0.0
+        action_counter: Counter = Counter()
+        for record in steps:
+            yaw = float(record.get("torso_rotation", 0.0))
+            max_abs_yaw = max(max_abs_yaw, abs(yaw))
+            action_counter.update([str(record.get("action", ""))])
+        counts = ", ".join(
+            f"{name}={count}" for name, count in sorted(action_counter.items())
+        )
+        action_sequence = str(episode.get("action_sequence", ""))
+        if len(action_sequence) > 400:
+            action_sequence = action_sequence[:400] + "..."
+        return (
+            f"Episode {episode_id} outcome: success={success}, end={end_reason}, "
+            f"steps={len(steps)}, "
+            f"final_distance={float(episode.get('final_distance', 0.0)):.3f} m, "
+            f"max_abs_torso_yaw={max_abs_yaw:.0f} deg, "
+            f"wall_collisions={int(episode.get('wall_collision_count', 0))}, "
+            f"invalid_actions={int(episode.get('invalid_response_count', 0))}. "
+            f"Action counts: {counts}. Actions: {action_sequence}"
+        )
+
     def run_all(
         self,
-        levels: Sequence[int] = (0, 1, 2, 3),
+        levels: Sequence[int] = (0, 1, 2, 3, 4, 5),
         episodes_per_level: int = 1,
         rounds: int = 3,
     ) -> Dict[int, List[Dict[str, Any]]]:
         results: Dict[int, List[Dict[str, Any]]] = {}
         for level in levels:
-            results[int(level)] = self.run_level(
-                level=int(level),
-                episodes=episodes_per_level,
-                rounds=rounds,
-            )
+            if int(level) == 4:
+                phase_a_episodes, phase_b_episodes = self.run_level_4_memory(
+                    rounds=rounds
+                )
+                results[int(level)] = phase_a_episodes + phase_b_episodes
+            elif int(level) == 5:
+                results[int(level)] = self.run_level_5(
+                    rounds=rounds,
+                    episodes_per_round=10,
+                )
+            else:
+                results[int(level)] = self.run_level(
+                    level=int(level),
+                    episodes=episodes_per_level,
+                    rounds=rounds,
+                )
         return results
 
     def run_level(
@@ -525,6 +589,7 @@ class BAOExperimentRunner:
             Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
         ] = None,
     ) -> List[Dict[str, Any]]:
+        self._restore_default_channel_width()
         all_episodes: List[Dict[str, Any]] = []
         episodes_per_round = int(episodes)
         total = episodes_per_round * int(rounds)
@@ -555,6 +620,67 @@ class BAOExperimentRunner:
                         all_episodes,
                     )
             self._save_summary(level, round_id, round_episodes)
+        return all_episodes
+
+    def run_level_5(
+        self,
+        rounds: int = 3,
+        episodes_per_round: int = 10,
+        progress_callback: Optional[
+            Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
+        ] = None,
+    ) -> List[Dict[str, Any]]:
+        """Run repeated episodes in one shared session to build a memory curve.
+
+        Each round keeps the same AgentAdapter, action history, and compact
+        per-episode summaries so the model can improve over ten episodes. A new
+        round starts a fresh agent and memory, producing a separate curve.
+        """
+        self._restore_default_channel_width()
+        all_episodes: List[Dict[str, Any]] = []
+        episodes_per_round = max(1, int(episodes_per_round))
+        total = episodes_per_round * int(rounds)
+        completed = 0
+        for round_id in range(int(rounds)):
+            agent_log = os.path.join(
+                self.log_dir, f"round{round_id}_level5_session_agent.txt"
+            )
+            agent = AgentAdapter(model=self.model, log_file=agent_log)
+            shared_history: List[Dict[str, str]] = []
+            session_memory: List[str] = []
+            round_episodes: List[Dict[str, Any]] = []
+            for episode_id in range(episodes_per_round):
+                episode_result = self._run_episode(
+                    level=5,
+                    episode_id=episode_id,
+                    round_id=round_id,
+                    agent=agent,
+                    shared_history=shared_history,
+                    session_memory=session_memory,
+                )
+                memory_summary = self._session_episode_summary(episode_result)
+                episode_result["memory_summary"] = memory_summary
+                session_memory.append(memory_summary)
+                if len(session_memory) > 12:
+                    del session_memory[:-12]
+                round_episodes.append(episode_result)
+                all_episodes.append(episode_result)
+                self._save_episode(episode_result)
+                completed += 1
+                print(
+                    f"[level 5 round {round_id}] episode {episode_id + 1}/"
+                    f"{episodes_per_round} success={episode_result['success']} "
+                    f"end={episode_result['end_reason']} "
+                    f"steps={len(episode_result['steps'])}"
+                )
+                if progress_callback is not None:
+                    progress_callback(
+                        completed,
+                        total,
+                        episode_result,
+                        all_episodes,
+                    )
+            self._save_summary(5, round_id, round_episodes)
         return all_episodes
 
     def run_level_4(
@@ -652,46 +778,69 @@ class BAOExperimentRunner:
         )
         return all_episodes
 
-    def run_level_0_4(
-        self, rounds: int = 3
+    def run_level_4_memory(
+        self,
+        rounds: int = 3,
+        progress_callback: Optional[
+            Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
+        ] = None,
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-        """Run Level 0 then Level 4 Phase B in the same session per round."""
-        level0_episodes: List[Dict[str, Any]] = []
+        """Run guided 0.38m phase A, then 0.60m phase B, per round.
+
+        Both phases live in one shared session per round and are saved under
+        level 4 only. Phase A is the staged guided walk through the narrow
+        opening; phase B then tests whether the model still goes sideways when
+        the opening is silently widened.
+        """
+        phase_a_episodes: List[Dict[str, Any]] = []
         phase_b_episodes: List[Dict[str, Any]] = []
+        total = int(rounds) * 2
+        completed = 0
         for round_id in range(int(rounds)):
-            self.env.set_channel_width(0.38)
             agent_log = os.path.join(
-                self.log_dir, f"round{round_id}_level0_4_session_agent.txt"
+                self.log_dir, f"round{round_id}_level4_memory_session_agent.txt"
             )
             agent = AgentAdapter(model=self.model, log_file=agent_log)
             shared_history: List[Dict[str, str]] = []
             session_memory: List[str] = []
 
-            level0 = self._run_episode(
-                level=0,
+            self.env.set_channel_width(0.38)
+            phase_a = self._run_episode(
+                level=4,
                 episode_id=0,
                 round_id=round_id,
+                phase="A",
+                channel_width=0.38,
                 agent=agent,
                 shared_history=shared_history,
                 session_memory=session_memory,
             )
-            self._save_episode(level0)
-            self._save_summary(0, round_id, [level0])
-            level0_episodes.append(level0)
-            session_memory.append(
-                f"Level0 Episode: success={level0['success']}, "
-                f"steps={len(level0['steps'])}, "
-                f"max_side_rotation={self._max_abs_yaw(level0['steps']):.0f} deg"
+            phase_a["sideways_rate"] = self._compute_sideways_rate(
+                phase_a["steps"]
             )
+            self._save_episode(phase_a)
+            self._save_level4_phase_summary("A", round_id, [phase_a], 0.38)
+            phase_a_episodes.append(phase_a)
+            session_memory.append(self._session_episode_summary(phase_a))
+            completed += 1
             print(
-                f"[level0_4 round {round_id}] Level 0 finished: "
-                f"success={level0['success']} steps={len(level0['steps'])}"
+                f"[level 4 A round {round_id}] "
+                f"success={phase_a['success']} "
+                f"sideways_rate={phase_a['sideways_rate']:.3f} "
+                f"steps={len(phase_a['steps'])}"
             )
+            if progress_callback is not None:
+                progress_callback(
+                    completed,
+                    total,
+                    phase_a,
+                    phase_a_episodes + phase_b_episodes,
+                )
 
             self.env.set_channel_width(0.60)
             phase_b = self._run_episode(
                 level=4,
-                episode_id=0,
+                episode_id=1,
                 round_id=round_id,
                 phase="B",
                 channel_width=0.60,
@@ -703,16 +852,23 @@ class BAOExperimentRunner:
                 phase_b["steps"]
             )
             self._save_episode(phase_b)
-            self._save_level4_phase_summary(
-                "B", round_id, [phase_b], 0.60
-            )
+            self._save_level4_phase_summary("B", round_id, [phase_b], 0.60)
             phase_b_episodes.append(phase_b)
+            completed += 1
             print(
-                f"[level0_4 round {round_id}] Level 4B finished: "
-                f"success={phase_b['success']} steps={len(phase_b['steps'])} "
-                f"sideways_rate={phase_b['sideways_rate']:.3f}"
+                f"[level 4 B round {round_id}] "
+                f"success={phase_b['success']} "
+                f"sideways_rate={phase_b['sideways_rate']:.3f} "
+                f"steps={len(phase_b['steps'])}"
             )
-        return level0_episodes, phase_b_episodes
+            if progress_callback is not None:
+                progress_callback(
+                    completed,
+                    total,
+                    phase_b,
+                    phase_a_episodes + phase_b_episodes,
+                )
+        return phase_a_episodes, phase_b_episodes
 
     @staticmethod
     def _compute_sideways_rate(steps: Sequence[Dict[str, Any]]) -> float:
@@ -812,7 +968,7 @@ class BAOExperimentRunner:
             rgb = self.env.get_camera_image()
             state = self.env.get_robot_state()
             state["distance_to_target"] = distance
-            if level == 0:
+            if level == 0 or (level == 4 and phase == "A"):
                 state["level0_stage"] = level0_stage
                 state["level0_required_action"] = LEVEL0_STAGE_ACTIONS[level0_stage][0]
 
@@ -829,7 +985,9 @@ class BAOExperimentRunner:
             total_llm_time_ms += latency_ms
 
             stage_required: Optional[str] = None
-            if level == 0 and level0_stage < len(LEVEL0_STAGE_ACTIONS):
+            if (
+                level == 0 or (level == 4 and phase == "A")
+            ) and level0_stage < len(LEVEL0_STAGE_ACTIONS):
                 stage_required = LEVEL0_STAGE_ACTIONS[level0_stage][0]
 
             if action_name is None or (
@@ -864,7 +1022,7 @@ class BAOExperimentRunner:
                     if point is not None:
                         collision_info = {"point": point}
                 if (
-                    level == 0
+                    (level == 0 or (level == 4 and phase == "A"))
                     and stage_required == action_name
                     and result.legal
                 ):
@@ -1029,7 +1187,7 @@ class BAOExperimentRunner:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the BAO four-level protocol.")
     parser.add_argument("--model", type=str, required=True, help="Model name passed to ai_agent")
-    parser.add_argument("--levels", type=int, nargs="+", default=[0, 1, 2, 3])
+    parser.add_argument("--levels", type=int, nargs="+", default=[0, 1, 2, 3, 4, 5])
     parser.add_argument("--episodes", type=int, default=1, help="Episodes per round")
     parser.add_argument("--rounds", type=int, default=3, help="Repeated rounds per model")
     parser.add_argument("--max_steps", type=int, default=None)
@@ -1066,7 +1224,15 @@ def main() -> None:
         runner.save_args(args)
         for level in args.levels:
             if level == 4:
-                episodes = runner.run_level_4()
+                phase_a_episodes, phase_b_episodes = runner.run_level_4_memory(
+                    rounds=args.rounds
+                )
+                episodes = phase_a_episodes + phase_b_episodes
+            elif level == 5:
+                episodes = runner.run_level_5(
+                    rounds=args.rounds,
+                    episodes_per_round=args.episodes,
+                )
             else:
                 episodes = runner.run_level(
                     level=level,

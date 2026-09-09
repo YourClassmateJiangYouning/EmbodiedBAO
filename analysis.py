@@ -497,6 +497,7 @@ def table_row(analysis: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "model": analysis["model"],
         "level": analysis["level"],
+        "round": "all",
         "episodes": analysis["episodes"],
         "step_ness": step["step_ness"],
         "step_ness_class": step["step_ness_class"],
@@ -518,6 +519,7 @@ def format_markdown_table(rows: Sequence[Dict[str, Any]]) -> str:
     header = [
         "Model",
         "Level",
+        "Round",
         "Step-ness",
         "Step Class",
         "First Success",
@@ -533,6 +535,7 @@ def format_markdown_table(rows: Sequence[Dict[str, Any]]) -> str:
         values = [
             str(row["model"]),
             str(row["level"]),
+            str(row.get("round", "all")),
             f"{row['step_ness']:.4f}",
             row["step_ness_class"],
             "-" if row["first_success_episode"] is None else str(row["first_success_episode"]),
@@ -660,6 +663,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--results_root", type=str, default="results")
     parser.add_argument("--level", type=int, default=2, help="Level to analyze (usually 2 or 3)")
     parser.add_argument("--models", type=str, nargs="*", default=None, help="Model names; default: all")
+    parser.add_argument(
+        "--per_round",
+        action="store_true",
+        help="Analyze each round as a separate learning curve",
+    )
     parser.add_argument("--out_dir", type=str, default="analysis")
     parser.add_argument("--window", type=int, default=5, help="Sliding window for success rate")
     parser.add_argument("--insight_threshold", type=float, default=0.5)
@@ -687,45 +695,77 @@ def main() -> int:
         if not episodes:
             print(f"[analysis] skip {model}: no episodes")
             continue
-        analysis = analyze_episodes(
-            episodes,
-            model=model,
-            level=args.level,
-            window=args.window,
-            insight_threshold=args.insight_threshold,
-            gradual_threshold=args.gradual_threshold,
-            switch_threshold=args.switch_threshold,
-            one_shot_threshold=args.one_shot_threshold,
-            gradual_adjust_threshold=args.gradual_adjust_threshold,
-        )
-        rows.append(table_row(analysis))
-
         safe_model = model.replace("/", "-").replace("\\", "-")
-        json_path = os.path.join(args.out_dir, f"analysis_level{args.level}_{safe_model}.json")
-        with open(json_path, "w", encoding="utf-8") as handle:
-            json.dump(analysis, handle, indent=2, ensure_ascii=False)
-        print(f"[analysis] {model}: step_ness={analysis['step_ness']['step_ness']:.4f} "
-              f"({analysis['step_ness']['step_ness_class']}), "
-              f"switches={analysis['strategy_switches']['switch_count']}, "
-              f"one_shot_index={analysis['one_shot_adjustment']['mean_index']:.4f}, "
-              f"TSR={analysis['mirrorbench_metrics']['tsr']}, "
-              f"SIR={analysis['mirrorbench_metrics']['sir']}")
+        groups: List[Tuple[Optional[int], List[Dict[str, Any]]]] = []
+        if args.per_round or args.level == 5:
+            by_round: Dict[int, List[Dict[str, Any]]] = {}
+            for episode in episodes:
+                by_round.setdefault(int(episode.get("round", 0)), []).append(episode)
+            groups = sorted(
+                (round_id, group) for round_id, group in by_round.items()
+            )
+        else:
+            groups = [(None, episodes)]
 
-        if not args.no_plot:
-            try:
-                plot_learning_curve(
-                    analysis, os.path.join(args.out_dir, f"learning_curve_{safe_model}.png")
-                )
-                plot_strategy_switch(
-                    analysis,
-                    os.path.join(args.out_dir, f"strategy_switch_{safe_model}.png"),
-                    threshold=args.switch_threshold,
-                )
-                plot_exploration(
-                    analysis, os.path.join(args.out_dir, f"exploration_{safe_model}.png")
-                )
-            except Exception as exc:
-                print(f"[analysis] plotting failed for {model}: {exc}")
+        for round_id, group in groups:
+            analysis = analyze_episodes(
+                group,
+                model=model,
+                level=args.level,
+                window=args.window,
+                insight_threshold=args.insight_threshold,
+                gradual_threshold=args.gradual_threshold,
+                switch_threshold=args.switch_threshold,
+                one_shot_threshold=args.one_shot_threshold,
+                gradual_adjust_threshold=args.gradual_adjust_threshold,
+            )
+            row = table_row(analysis)
+            row["round"] = round_id if round_id is not None else "all"
+            rows.append(row)
+
+            round_suffix = f"_round{round_id}" if round_id is not None else ""
+            json_path = os.path.join(
+                args.out_dir,
+                f"analysis_level{args.level}_{safe_model}{round_suffix}.json",
+            )
+            with open(json_path, "w", encoding="utf-8") as handle:
+                json.dump(analysis, handle, indent=2, ensure_ascii=False)
+            print(
+                f"[analysis] {model} round={round_id}: "
+                f"step_ness={analysis['step_ness']['step_ness']:.4f} "
+                f"({analysis['step_ness']['step_ness_class']}), "
+                f"switches={analysis['strategy_switches']['switch_count']}, "
+                f"one_shot_index={analysis['one_shot_adjustment']['mean_index']:.4f}, "
+                f"TSR={analysis['mirrorbench_metrics']['tsr']}, "
+                f"SIR={analysis['mirrorbench_metrics']['sir']}"
+            )
+
+            if not args.no_plot:
+                try:
+                    plot_learning_curve(
+                        analysis,
+                        os.path.join(
+                            args.out_dir,
+                            f"learning_curve_{safe_model}{round_suffix}.png",
+                        ),
+                    )
+                    plot_strategy_switch(
+                        analysis,
+                        os.path.join(
+                            args.out_dir,
+                            f"strategy_switch_{safe_model}{round_suffix}.png",
+                        ),
+                        threshold=args.switch_threshold,
+                    )
+                    plot_exploration(
+                        analysis,
+                        os.path.join(
+                            args.out_dir,
+                            f"exploration_{safe_model}{round_suffix}.png",
+                        ),
+                    )
+                except Exception as exc:
+                    print(f"[analysis] plotting failed for {model}: {exc}")
 
     if not rows:
         print("[analysis] no analyzable episodes.")

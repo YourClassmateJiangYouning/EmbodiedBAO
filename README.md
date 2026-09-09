@@ -33,7 +33,7 @@ BAO task?
 
 1. `main.py` - entry point, command line parsing, experiment scheduling.
 2. `environment.py` - builds the BAO scene in Isaac Sim.
-3. `experiments.py` - implements the Level 0-3 tiered protocol.
+3. `experiments.py` - implements the Level 0-5 tiered protocol.
 4. `ai_agent.py` - unified MLLM interface.
 5. `analysis.py` - Step-ness, strategy switching, exploratory behavior, and
    one-shot adjustment metrics.
@@ -108,6 +108,12 @@ Level 4 channel-widening experiment:
 %ISAACSIM_ROOT%\python.bat main.py --model gpt-4o --level 4 --headless
 ```
 
+Level 5 repeated-episode memory experiment:
+
+```text
+%ISAACSIM_ROOT%\python.bat main.py --model gpt-4o --level 5 --headless
+```
+
 Batch evaluation:
 
 - Windows: `evaluate.bat MODEL_NAME [EPISODES]`
@@ -124,6 +130,12 @@ Analysis:
 
 ```text
 %ISAACSIM_ROOT%\python.bat analysis.py --results_root results --level 2 --models gpt-4o
+```
+
+Level 5 analysis produces one curve per round by default:
+
+```text
+%ISAACSIM_ROOT%\python.bat analysis.py --results_root results --level 5 --models gpt-4o
 ```
 
 Outputs:
@@ -172,6 +184,11 @@ Outputs:
     sideways solution itself.
   - Level 2: generic task only ("reach the green ball in front of you").
   - Level 3: generic task only, with no target-behind-wall prior.
+  - Level 4: one staged guided 0.38m phase followed by a widened 0.60m phase
+    in the same session, saved only under Level 4.
+  - Level 5: wall disclosed, no width or solution; ten episodes per round
+    with the same agent, shared action history, and compact per-episode
+    memory so the learning curve can be measured per round.
 - Analysis plan: Step-ness (insight vs gradual), strategy switching
   (front-side-front), exploratory behavior, and one-shot body adjustment.
 
@@ -219,14 +236,19 @@ Outputs:
   channel information.
 - Level 3 (self-referential body adjustment): generic task only, no wall,
   channel, or target-behind-wall prior.
-- Level 4 (channel-widening memory): phase A uses the full Level 0 guidance
-  with a 0.38m channel, then phase B silently widens the channel to 0.60m
-  and only asks the agent to reach the ball. The session agent and history
-  are not reset between phases.
-- Each level runs `--rounds x --episodes` episodes (default 3 rounds x 1).
+- Level 4 (guided memory phase): phase A runs the staged Level 0 walk through
+  a 0.38m channel; phase B silently widens it to 0.60m and only asks the
+  agent to reach the ball. The agent and history are not reset between
+  phases, and all results are saved under Level 4.
+- Level 5 (insight curve): wall disclosed, ten 30-step episodes per round in
+  one agent session. A summary of each completed episode is added to the next
+  episode's prompt; each round starts fresh memory, producing a separate curve.
+- Levels 0-3 run `--rounds x --episodes` episodes (default 3 rounds x 1).
+  Level 4 runs one guided phase and one transfer phase per round. Level 5
+  runs ten episodes per round by default.
 - Per-level max steps: Level 0 = 30, Level 1 = 50, Level 2 = 70,
-  Level 3 = 90 unless `--max_steps` is provided.
-  Each episode has at most 30 steps and ends only on success or step
+  Level 3 = 90, Level 4 = 90, Level 5 = 30 unless `--max_steps` is provided.
+  Each episode has at most its configured max steps and ends only on success or step
   exhaustion; wall collisions are recorded but do not terminate.
 - Per-step loop: `get_camera_image -> get_robot_state -> build prompt ->
   ai_agent.get_action -> execute_action -> check_success ->
@@ -252,7 +274,7 @@ Outputs:
   "reasoning"}`. The response is parsed as JSON (code fences and
   surrounding text tolerated), validated against the action list, and
   retried up to 3 times on timeout/errors.
-- `build_prompt(level, context)` builds English prompts for Level 0-3 and
+- `build_prompt(level, context)` builds English prompts for Level 0-5 and
   always requires JSON output.
 - Also supports `create_agent(model, log_file)`, `get_agent(...)`, and the
   module-level `get_action(...)` used by experiments.py.

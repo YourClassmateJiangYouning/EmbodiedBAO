@@ -16,6 +16,7 @@ from environment import (
     _isaac_to_user_pos,
     _user_to_isaac_pos,
 )
+from experiments import BAOExperimentRunner, build_prompt
 
 
 GROUND_OFFSET = 1.0442
@@ -187,6 +188,45 @@ class CoordinateRegressionTest(unittest.TestCase):
         self.assertAlmostEqual(env._camera_yaw_offset, 30.0)
         env._apply_action("look_right")
         self.assertAlmostEqual(env._camera_yaw_offset, 0.0)
+
+
+class ProtocolMemoryTest(unittest.TestCase):
+    def test_level5_prompt_includes_previous_episode_memory(self) -> None:
+        prompt = build_prompt(
+            level=5,
+            state={
+                "position": [1.5, 0.0, 0.0],
+                "orientation": {"yaw": 0.0},
+                "camera_yaw": 0.0,
+                "raised_arm": "none",
+                "distance_to_target": 0.7,
+            },
+            session_memory=["Episode 0 outcome: success=False, steps=30"],
+            max_steps=30,
+        )
+        self.assertIn("Previous completed episodes:", prompt)
+        self.assertIn("Episode 0 outcome: success=False", prompt)
+
+    def test_session_summary_is_compact_and_factual(self) -> None:
+        summary = BAOExperimentRunner._session_episode_summary(
+            {
+                "episode_id": 2,
+                "success": False,
+                "end_reason": "max_steps",
+                "final_distance": 0.53,
+                "wall_collision_count": 3,
+                "invalid_response_count": 1,
+                "action_sequence": "forward,forward,turn_left",
+                "steps": [
+                    {"torso_rotation": 0.0, "action": "forward"},
+                    {"torso_rotation": 15.0, "action": "forward"},
+                    {"torso_rotation": 30.0, "action": "turn_left"},
+                ],
+            }
+        )
+        self.assertIn("Episode 2 outcome: success=False", summary)
+        self.assertIn("max_abs_torso_yaw=30", summary)
+        self.assertIn("forward=2", summary)
 
 
 if __name__ == "__main__":

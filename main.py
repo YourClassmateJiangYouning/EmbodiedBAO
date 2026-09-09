@@ -3,6 +3,7 @@
 Usage:
     python main.py --model gpt-4o --level 0 --episodes 50
     python main.py --model gpt-4o --level 4
+    python main.py --model gpt-4o --level 5
     python main.py --model claude-3.5-sonnet --level 3 --episodes 50
     python main.py --model gemini-2.5-pro --all-levels
 
@@ -26,14 +27,14 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="EmbodiedBAO experiment entry point.")
     parser.add_argument("--model", type=str, default="gpt-4o", help="Model name")
     parser.add_argument(
-        "--level", type=int, choices=[0, 1, 2, 3, 4], default=0, help="Level to run"
+        "--level", type=int, choices=[0, 1, 2, 3, 4, 5], default=0, help="Level to run"
     )
     parser.add_argument("--episodes", type=int, default=1, help="Episodes per round")
     parser.add_argument(
         "--rounds", type=int, default=3, help="Repeated rounds per model"
     )
     parser.add_argument(
-        "--all-levels", action="store_true", help="Run levels 0, 1, 2, 3"
+        "--all-levels", action="store_true", help="Run levels 0, 1, 2, 3, 4, 5"
     )
     parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--phase_a_initial", type=int, default=10)
@@ -156,7 +157,7 @@ def _write_progress(message: str) -> None:
 
 def main() -> None:
     args = parse_args()
-    levels = [0, 1, 2, 3] if args.all_levels else [args.level]
+    levels = [0, 1, 2, 3, 4, 5] if args.all_levels else [args.level]
     _write_progress(
         f"main start: model={args.model} levels={levels} "
         f"rounds={args.rounds} episodes={args.episodes}"
@@ -194,21 +195,30 @@ def main() -> None:
         for level in levels:
             _write_progress(f"level {level} start")
             if level == 4:
-                level0_episodes, phase_b_episodes = runner.run_level_0_4(
+                phase_a_episodes, phase_b_episodes = runner.run_level_4_memory(
                     rounds=args.rounds
                 )
-                for save_level, save_episodes in (
-                    (0, level0_episodes),
-                    (4, phase_b_episodes),
-                ):
-                    csv_path = save_episodes_csv(
-                        save_episodes,
-                        model=args.model,
-                        level=save_level,
-                        timestamp=timestamp,
-                    )
-                    print(f"[main] saved {csv_path}")
-                    _write_progress(f"csv saved: {csv_path}")
+                episodes = phase_a_episodes + phase_b_episodes
+                csv_path = save_episodes_csv(
+                    episodes,
+                    model=args.model,
+                    level=level,
+                    timestamp=timestamp,
+                )
+                print(f"[main] saved {csv_path}")
+                _write_progress(f"csv saved: {csv_path}")
+            elif level == 5:
+                episodes = runner.run_level_5(
+                    rounds=args.rounds,
+                    progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
+                        lvl, completed, total, episodes_done
+                    ),
+                )
+                csv_path = save_episodes_csv(
+                    episodes, model=args.model, level=level, timestamp=timestamp
+                )
+                print(f"[main] saved {csv_path}")
+                _write_progress(f"csv saved: {csv_path}")
             else:
                 episodes = runner.run_level(
                     level=level,
