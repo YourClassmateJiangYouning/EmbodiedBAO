@@ -714,10 +714,10 @@ class BAOEnv:
             self._create_and_bind_material(
                 prim_path,
                 mat_path,
-                color=[0.72, 0.88, 0.92],
+                color=[0.55, 0.72, 0.82],
                 metallic=0.0,
-                roughness=0.02,
-                opacity=0.08,
+                roughness=0.12,
+                opacity=0.22,
             )
             return
         prim = self.stage.GetPrimAtPath(prim_path)
