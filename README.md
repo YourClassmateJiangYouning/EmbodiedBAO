@@ -109,7 +109,8 @@ Level 4 channel-widening experiment:
 ```
 
 Running `--level 1`, `--level 2`, `--level 3`, or `--level 4` now runs the
-cold and Level 0-primed paired cells for that level.
+cold and Level 0-primed paired cells for that level. The required Level 0
+memory is produced first in the same process.
 
 Level 5 repeated-episode memory experiment:
 
@@ -188,8 +189,8 @@ Outputs:
   - Level 3: wall disclosed and no target-behind-wall prior.
   - Level 4: widened 0.60m channel task; the model only has to reach the ball.
   - Levels 1-4 each run a cold cell and a Level 0-primed cell. Primed cells
-    first complete the staged 0.38m Level 0 tutorial in the same agent
-    session, then test the target task with that successful episode memory.
+    reuse the matching round's successful Level 0 episode memory, so Level 0
+    runs once per round and is shared by Levels 1-4.
   - Level 5: wall disclosed, no width or solution; ten episodes per round
     with the same agent, shared action history, and compact per-episode
     memory so the learning curve can be measured per round.
@@ -241,15 +242,16 @@ Outputs:
 - Level 3 (cold/primed): wall disclosed without target-behind-wall prior;
   primed condition receives the successful Level 0 tutorial memory.
 - Level 4 (wide cold/primed): 0.60m channel. Cold runs without prior;
-  primed runs complete the 0.38m Level 0 tutorial first, then face the wider
-  channel. This measures whether the agent overgeneralizes the narrow-channel
-  sideways strategy or adapts to the wider opening.
+  primed runs reuse the shared 0.38m Level 0 tutorial memory, then face the
+  wider channel. This measures whether the agent overgeneralizes the
+  narrow-channel sideways strategy or adapts to the wider opening.
 - Level 5 (insight curve): wall disclosed, ten 30-step episodes per round in
   one agent session. A summary of each completed episode is added to the next
   episode's prompt; each round starts fresh memory, producing a separate curve.
 - Levels 1-4 run cold and primed cells, each for `--rounds` rounds with one
-  target episode per round. A primed round first runs the Level 0 tutorial in
-  the same session. Level 5 runs ten episodes per round by default.
+  target episode per round. Level 0 runs once per round and its memory is
+  shared by every primed Level 1-4 target in that round. Level 5 runs ten
+  episodes per round by default.
 - Per-level max steps: all levels default to 30 unless `--max_steps` is
   provided.
   Each episode has at most its configured max steps and ends only on success or step

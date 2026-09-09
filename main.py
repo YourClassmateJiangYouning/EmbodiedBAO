@@ -158,7 +158,12 @@ def _write_progress(message: str) -> None:
 
 def main() -> None:
     args = parse_args()
-    levels = [0, 1, 2, 3, 4, 5] if args.all_levels else [args.level]
+    if args.all_levels:
+        levels = [0, 1, 2, 3, 4, 5]
+    elif args.level in (1, 2, 3, 4):
+        levels = [0, args.level]
+    else:
+        levels = [args.level]
     _write_progress(
         f"main start: model={args.model} levels={levels} "
         f"rounds={args.rounds} episodes={args.episodes}"
@@ -193,13 +198,30 @@ def main() -> None:
         runner.save_args(args)
         _write_progress("runner created")
         timestamp = time.strftime("%Y%m%d-%H%M%S")
+        level0_episodes: List[Dict[str, Any]] = []
         for level in levels:
             _write_progress(f"level {level} start")
-            if level in (1, 2, 3, 4):
+            if level == 0:
+                episodes = runner.run_level(
+                    level=level,
+                    episodes=args.episodes,
+                    rounds=args.rounds,
+                    progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
+                        lvl, completed, total, episodes_done
+                    ),
+                )
+                level0_episodes = episodes
+                csv_path = save_episodes_csv(
+                    episodes, model=args.model, level=level, timestamp=timestamp
+                )
+                print(f"[main] saved {csv_path}")
+                _write_progress(f"csv saved: {csv_path}")
+            elif level in (1, 2, 3, 4):
                 episodes = runner.run_level_ablation(
                     level=level,
                     rounds=args.rounds,
                     channel_width=0.60 if level == 4 else 0.38,
+                    level0_episodes=level0_episodes,
                 )
                 csv_path = save_episodes_csv(
                     episodes,
@@ -235,20 +257,6 @@ def main() -> None:
                     f"level {level}: cold_success={cold_rate:.3f} "
                     f"primed_success={primed_rate:.3f}"
                 )
-            elif level == 0:
-                episodes = runner.run_level(
-                    level=level,
-                    episodes=args.episodes,
-                    rounds=args.rounds,
-                    progress_callback=lambda completed, total, episode_result, episodes_done, lvl=level: _progress_callback(
-                        lvl, completed, total, episodes_done
-                    ),
-                )
-                csv_path = save_episodes_csv(
-                    episodes, model=args.model, level=level, timestamp=timestamp
-                )
-                print(f"[main] saved {csv_path}")
-                _write_progress(f"csv saved: {csv_path}")
             elif level == 5:
                 episodes = runner.run_level_5(
                     rounds=args.rounds,

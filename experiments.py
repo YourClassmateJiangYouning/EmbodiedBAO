@@ -561,12 +561,17 @@ class BAOExperimentRunner:
         rounds: int = 3,
     ) -> Dict[int, List[Dict[str, Any]]]:
         results: Dict[int, List[Dict[str, Any]]] = {}
+        if 0 not in levels and any(int(level) in (1, 2, 3, 4) for level in levels):
+            raise ValueError(
+                "paired Level 1-4 runs require Level 0 episodes; include level 0"
+            )
         for level in levels:
             if int(level) in (1, 2, 3, 4):
                 results[int(level)] = self.run_level_ablation(
                     level=int(level),
                     rounds=rounds,
                     channel_width=0.60 if int(level) == 4 else 0.38,
+                    level0_episodes=results.get(0, []),
                 )
             elif int(level) == 5:
                 results[int(level)] = self.run_level_5(
@@ -689,6 +694,7 @@ class BAOExperimentRunner:
         level: int,
         rounds: int = 3,
         channel_width: float = 0.38,
+        level0_episodes: Optional[Sequence[Dict[str, Any]]] = None,
         progress_callback: Optional[
             Callable[[int, int, Dict[str, Any], List[Dict[str, Any]]], None]
         ] = None,
@@ -696,14 +702,19 @@ class BAOExperimentRunner:
         """Run one target level as cold vs Level 0-primed paired cells.
 
         Cold cells run the target without prior Level 0 experience. Primed
-        cells first complete the staged Level 0 tutorial in the same agent
-        session, then reset to the target scene with that episode summary in
-        memory. Level 4 uses the widened channel for the target while the
-        tutorial remains the narrow 0.38m route.
+        cells reuse the already-run Level 0 episode for the matching round, so
+        Level 0 is executed once per round instead of once per target level.
+        Level 4 uses the widened channel for the target while the shared Level
+        0 tutorial memory remains the narrow 0.38m route.
         """
         if level not in (1, 2, 3, 4):
             raise ValueError("run_level_ablation supports levels 1, 2, 3, 4")
         rounds = max(1, int(rounds))
+        if level0_episodes is None or len(level0_episodes) < rounds:
+            raise ValueError(
+                "run_level_ablation requires one successful Level 0 episode "
+                "per round for primed cells"
+            )
         channel_width = float(channel_width)
         target_phase = "B" if level == 4 else None
         all_episodes: List[Dict[str, Any]] = []
@@ -742,35 +753,20 @@ class BAOExperimentRunner:
                     all_episodes,
                 )
 
-        # Primed condition: Level 0 tutorial, then target in the same session.
+        # Primed condition: inject the shared Level 0 memory from this round.
         for round_id in range(rounds):
-            self.env.set_channel_width(0.38)
+            level0_episode = level0_episodes[round_id]
+            memory_summary = self._session_episode_summary(level0_episode)
             agent_log = os.path.join(
                 self.log_dir,
                 f"round{round_id}_level{level}_primed_session_agent.txt",
             )
             agent = AgentAdapter(model=self.model, log_file=agent_log)
             shared_history: List[Dict[str, str]] = []
-            session_memory: List[str] = []
-
-            tutorial = self._run_episode(
-                level=0,
-                episode_id=0,
-                round_id=round_id,
-                channel_width=0.38,
-                condition="primed_tutorial",
-                agent=agent,
-                shared_history=shared_history,
-                session_memory=session_memory,
-            )
-            tutorial["sideways_rate"] = self._compute_sideways_rate(
-                tutorial["steps"]
-            )
-            memory_summary = self._session_episode_summary(tutorial)
-            session_memory.append(memory_summary)
             print(
-                f"[level {level} primed round {round_id}] Level0 tutorial "
-                f"success={tutorial['success']} steps={len(tutorial['steps'])}"
+                f"[level {level} primed round {round_id}] using Level0 memory "
+                f"success={level0_episode['success']} "
+                f"steps={len(level0_episode['steps'])}"
             )
 
             self.env.set_channel_width(channel_width)
@@ -783,13 +779,15 @@ class BAOExperimentRunner:
                 condition="primed",
                 agent=agent,
                 shared_history=shared_history,
-                session_memory=session_memory,
+                session_memory=[memory_summary],
             )
             episode_result["sideways_rate"] = self._compute_sideways_rate(
                 episode_result["steps"]
             )
-            episode_result["level0_tutorial_success"] = bool(tutorial["success"])
-            episode_result["level0_tutorial_summary"] = memory_summary
+            episode_result["level0_memory_success"] = bool(
+                level0_episode["success"]
+            )
+            episode_result["level0_memory_summary"] = memory_summary
             all_episodes.append(episode_result)
             self._save_episode(episode_result)
             self._save_summary(level, round_id, [episode_result])
@@ -1369,24 +1367,12 @@ def main() -> None:
             seed=args.seed,
         )
         runner.save_args(args)
-        for level in args.levels:
-            if level in (1, 2, 3, 4):
-                episodes = runner.run_level_ablation(
-                    level=level,
-                    rounds=args.rounds,
-                    channel_width=0.60 if level == 4 else 0.38,
-                )
-            elif level == 5:
-                episodes = runner.run_level_5(
-                    rounds=args.rounds,
-                    episodes_per_round=args.episodes,
-                )
-            else:
-                episodes = runner.run_level(
-                    level=level,
-                    episodes=args.episodes,
-                    rounds=args.rounds,
-                )
+        results = runner.run_all(
+            levels=args.levels,
+            episodes_per_level=args.episodes,
+            rounds=args.rounds,
+        )
+        for level, episodes in results.items():
             summary = BAOExperimentRunner._summarize(level, episodes)
             print(
                 f"[level {level}] success_rate={summary['success_rate']:.3f} "
