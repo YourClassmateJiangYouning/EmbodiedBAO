@@ -549,7 +549,7 @@ class BAOExperimentRunner:
         action_sequence = str(episode.get("action_sequence", ""))
         if len(action_sequence) > 400:
             action_sequence = action_sequence[:400] + "..."
-        return (
+        summary = (
             f"Episode {episode_id} outcome: success={success}, end={end_reason}, "
             f"steps={len(steps)}, "
             f"final_distance={float(episode.get('final_distance', 0.0)):.3f} m, "
@@ -558,6 +558,12 @@ class BAOExperimentRunner:
             f"invalid_actions={int(episode.get('invalid_response_count', 0))}. "
             f"Action counts: {counts}. Actions: {action_sequence}"
         )
+        if success:
+            summary += (
+                " This action sequence was sufficient from that episode's "
+                "start pose."
+            )
+        return summary
 
     def run_all(
         self,
