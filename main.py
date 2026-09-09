@@ -30,6 +30,14 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--level", type=int, choices=[0, 1, 2, 3, 4, 5], default=0, help="Level to run"
     )
+    parser.add_argument(
+        "--levels",
+        type=int,
+        nargs="+",
+        choices=[0, 1, 2, 3, 4, 5],
+        default=None,
+        help="Run multiple levels in one process",
+    )
     parser.add_argument("--episodes", type=int, default=1, help="Episodes per round")
     parser.add_argument(
         "--rounds", type=int, default=3, help="Repeated rounds per model"
@@ -46,6 +54,11 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         "--primed-only",
         action="store_true",
         help="Run only Level0-primed cells using saved Level0 episodes",
+    )
+    parser.add_argument(
+        "--use-saved-level0",
+        action="store_true",
+        help="Run paired Level1-4 cells with saved Level0 episodes, without rerunning Level0",
     )
     parser.add_argument("--max_steps", type=int, default=None)
     parser.add_argument("--headless", action="store_true")
@@ -196,12 +209,23 @@ def _write_progress(message: str) -> None:
 
 def main() -> None:
     args = parse_args()
+    requested_levels = list(args.levels or [args.level])
+    if args.all_levels and args.levels:
+        raise ValueError("--all-levels and --levels cannot be used together")
     if args.cold_only and args.primed_only:
         raise ValueError("--cold-only and --primed-only cannot be used together")
-    if args.all_levels and (args.cold_only or args.primed_only):
-        raise ValueError("--cold-only/--primed-only cannot be combined with --all-levels")
-    if (args.cold_only or args.primed_only) and args.level not in (1, 2, 3, 4):
-        raise ValueError("--cold-only/--primed-only require --level 1, 2, 3, or 4")
+    if args.all_levels and (
+        args.cold_only or args.primed_only or args.use_saved_level0
+    ):
+        raise ValueError(
+            "--cold-only/--primed-only/--use-saved-level0 cannot be combined "
+            "with --all-levels"
+        )
+    pair_flags = args.cold_only or args.primed_only or args.use_saved_level0
+    if pair_flags and any(level not in (1, 2, 3, 4) for level in requested_levels):
+        raise ValueError(
+            "pair-only flags require every selected level to be 1, 2, 3, or 4"
+        )
 
     cells: List[str] = ["cold", "primed"]
     if args.cold_only:
@@ -211,7 +235,17 @@ def main() -> None:
 
     if args.all_levels:
         levels = [0, 1, 2, 3, 4, 5]
-    elif args.level in (1, 2, 3, 4) and not args.primed_only and not args.cold_only:
+    elif args.levels:
+        levels = requested_levels
+        if (
+            0 not in levels
+            and any(level in (1, 2, 3, 4) for level in levels)
+            and not args.use_saved_level0
+            and not args.primed_only
+            and not args.cold_only
+        ):
+            levels.insert(0, 0)
+    elif any(level in (1, 2, 3, 4) for level in requested_levels) and not pair_flags:
         levels = [0, args.level]
     else:
         levels = [args.level]
@@ -250,6 +284,15 @@ def main() -> None:
         _write_progress("runner created")
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         level0_episodes: List[Dict[str, Any]] = []
+        if (
+            0 not in levels
+            and any(level in (1, 2, 3, 4) for level in levels)
+            and "primed" in cells
+        ):
+            level0_episodes = load_saved_level0_episodes(
+                model=args.model,
+                rounds=args.rounds,
+            )
         for level in levels:
             _write_progress(f"level {level} start")
             if level == 0:
@@ -268,17 +311,11 @@ def main() -> None:
                 print(f"[main] saved {csv_path}")
                 _write_progress(f"csv saved: {csv_path}")
             elif level in (1, 2, 3, 4):
-                ablation_level0 = level0_episodes
-                if args.primed_only:
-                    ablation_level0 = load_saved_level0_episodes(
-                        model=args.model,
-                        rounds=args.rounds,
-                    )
                 episodes = runner.run_level_ablation(
                     level=level,
                     rounds=args.rounds,
                     channel_width=0.60 if level == 4 else 0.38,
-                    level0_episodes=ablation_level0,
+                    level0_episodes=level0_episodes,
                     cells=cells,
                 )
                 csv_path = save_episodes_csv(

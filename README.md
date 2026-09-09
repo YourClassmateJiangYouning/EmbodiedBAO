@@ -120,6 +120,12 @@ To resume only the primed cells with already-saved Level0 episodes:
 
 Use `--cold-only` when only the no-memory condition needs rerunning.
 
+Run multiple saved-level0 paired levels in one process:
+
+```text
+%ISAACSIM_ROOT%\python.bat main.py --model gpt-4o --levels 2 3 4 --use-saved-level0 --headless
+```
+
 Level 5 repeated-episode memory experiment:
 
 ```text
