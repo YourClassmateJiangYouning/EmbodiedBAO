@@ -190,7 +190,8 @@ Outputs:
   - Level 1: wall and a narrow opening disclosed, no solution.
   - Level 2: wall disclosed, no opening information.
   - Level 3: wall disclosed and no target-behind-wall prior.
-  - Level 4: widened 0.60m channel task; the model only has to reach the ball.
+  - Level 4: widened 0.60m channel task; prompt discloses the wall and a
+    vertical opening, but not the opening width.
   - Levels 1-4 each run a cold cell and a Level 0-primed cell. Primed cells
     reuse the matching round's successful Level 0 episode memory, so Level 0
     runs once per round and is shared by Levels 1-4.
@@ -245,7 +246,8 @@ Outputs:
 - Level 3 (cold/primed): wall disclosed without target-behind-wall prior;
   primed condition receives the successful Level 0 tutorial memory.
 - Level 4 (wide cold/primed): 0.60m channel. Cold runs without prior;
-  primed runs reuse the shared 0.38m Level 0 tutorial memory, then face the
+  both prompt variants disclose the wall and an opening but not the width.
+  Primed runs reuse the shared 0.38m Level 0 tutorial memory, then face the
   wider channel. This measures whether the agent overgeneralizes the
   narrow-channel sideways strategy or adapts to the wider opening.
 - Level 5 (insight curve): wall disclosed, ten 30-step episodes per round in

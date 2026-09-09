@@ -195,7 +195,11 @@ LEVEL_PROMPTS: Dict[int, str] = {
     ),
 }
 
-LEVEL4_PHASE_B_PROMPT = "Your task is to reach the green ball in front of you."
+LEVEL4_PHASE_B_PROMPT = (
+    "A transparent wall stands between you and the green ball. "
+    "There is a vertical opening somewhere in it. "
+    "Your task is to reach the green ball."
+)
 
 
 def _recently_blocked(history: Optional[Sequence[Dict[str, str]]]) -> bool:
