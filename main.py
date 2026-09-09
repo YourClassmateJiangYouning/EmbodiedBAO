@@ -37,9 +37,6 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         "--all-levels", action="store_true", help="Run levels 0, 1, 2, 3, 4, 5"
     )
     parser.add_argument("--max_steps", type=int, default=None)
-    parser.add_argument("--phase_a_initial", type=int, default=10)
-    parser.add_argument("--phase_a_max", type=int, default=20)
-    parser.add_argument("--phase_b_episodes", type=int, default=20)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--tag", type=str, default="", help="Optional run tag")
     parser.add_argument(
